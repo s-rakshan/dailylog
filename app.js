@@ -1,7 +1,7 @@
 /* Daily Log: monthly project sheets on this phone (localStorage). Keep it simple. */
 'use strict';
 const APP_NAME = 'Daily Log';
-const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.5';
+const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.6';
 const COL_TYPES = [
   { id: 'tick', label: 'Tick', hint: 'Tap cycles blank → ✓ → ✗' },
   { id: 'text', label: 'Text', hint: 'Anything' },
@@ -218,7 +218,7 @@ function askText(title, opts = {}) {
       const inp = el(opts.multi ? 'textarea' : 'input', {
         class: opts.multi ? 'ta' : 'tin', id: 'askIn',
         placeholder: opts.placeholder || '', value: opts.value || '',
-        maxlength: opts.max || 200, ...(opts.multi ? {} : { type: 'text' }),
+        maxlength: opts.max || 200, ...(opts.multi ? { 'data-multiline': true } : { type: 'text', enterkeyhint: 'done' }),
       });
       if (opts.multi) inp.textContent = opts.value || '';
       sh.append(head(title), el('div', { class: 'fld', style: 'margin-top:8px' }, inp),
@@ -350,7 +350,7 @@ function renderGrid(p) {
       el('button', { class: 'thbtn' + (c.locked ? ' lk' : ''), title: 'Edit column', onclick: () => columnMenu(c) },
         el('span', {}, c.name), c.locked ? (editCols.has(c.id) ? el('i', { class: 'lki' }, '✎') : el('i', { class: 'lki', html: ICON.lock })) : null),
       el('span', { class: 'rz', 'data-col': c.id, 'aria-hidden': 'true' }))));
-  if (!p.columns.length) hr.append(el('th', {}, el('span', { style: 'color:var(--fg3);font-weight:500;text-transform:none;letter-spacing:0' }, 'Add a column →')));
+  if (!p.columns.length) hr.append(el('th', {}, el('button', { class: 'thadd', type: 'button', onclick: () => addColumn() }, 'Add a column →')));
   thead.append(hr); g.append(thead);
   const tb = el('tbody');
   for (let day = 1; day <= dim; day++) {
@@ -418,7 +418,7 @@ function cellControl(p, day, c) {
   const inp = el('textarea', {
     class: 'cin' + (c.type === 'text' ? ' text' : ''), rows: 1, 'data-col': c.id,
     ...(lockedNow ? { readonly: true, tabindex: -1 } : {}),
-    inputmode: c.type === 'number' ? 'decimal' : 'text',
+    inputmode: c.type === 'number' ? 'decimal' : 'text', enterkeyhint: 'done',
     value: v, placeholder: '',
     'aria-label': `${c.name}, day ${day}`,
     onfocus: e => e.target.dataset.old = e.target.value,
@@ -432,12 +432,10 @@ function cellControl(p, day, c) {
     onchange: e => commitCell(p, day, c, e.target.value),
     onblur: e => commitCell(p, day, c, e.target.value),
     onkeydown: e => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !e.isComposing) {
+        // Enter = the keyboard's Done key: save and close the keyboard
         e.preventDefault();
         e.target.blur();
-        // move to next day same column
-        const next = $(`#grid tr[data-day="${day + 1}"] .cin[data-col="${c.id}"]`);
-        next?.focus();
       }
     },
   });
@@ -665,7 +663,7 @@ function reminderSheet(p) {
       el('div', { class: 'card' },
         el('div', { class: 'it' }, el('div', { class: 'l' }, el('div', {}, 'Remind me'), el('small', {}, 'Skipped if today is already filled')), sw),
         el('div', { class: 'it' }, el('div', { class: 'l' }, el('div', {}, 'Time')), tm)),
-      el('p', { class: 'note' }, 'Web reminders on Android are best-effort — they work better when the app has been opened recently. A proper APK later will make them reliable.'));
+      el('p', { class: 'note' }, 'Some phones delay reminders to save battery. Opening the app now and then helps them arrive on time.'));
   });
 }
 function checkReminders() {
@@ -933,13 +931,13 @@ function settingsSheet() {
       grp('Reminders',
         it('10 PM catch-up', 'Lists only the projects still empty today', sw(S().catchup, v => { S().catchup = v; save(); if (v) askNotif(); })),
         it('Vibrate on tick', null, sw(S().vibrate, v => { S().vibrate = v; save(); })),
-        it('Notifications', perm === 'denied' ? 'Allow them in Chrome site settings' : 'Needed for reminders to reach you', nb)),
+        it('Notifications', perm === 'denied' ? 'Turn on notifications for this app in your phone or browser settings' : 'Needed for reminders to reach you', nb)),
       p ? grp('Export · ' + p.name,
         el('div', { class: 'it col' }, exSeg, monBox, rangeBox,
           el('div', { class: 'row2', style: 'margin-top:8px' },
             el('button', { class: 'btn pri', onclick: () => runExport(false) }, 'Save'),
             el('button', { class: 'btn', onclick: () => runExport(true).catch(e => toast('Share failed: ' + (e?.message || e))) }, 'Share'))),
-        el('p', { class: 'note', style: 'margin:8px 4px 0' }, 'Save downloads a Word file. Share sends a PNG photo (one per month) — Chrome on Android can\'t share .docx.')) : null,
+        el('p', { class: 'note', style: 'margin:8px 4px 0' }, 'Save downloads a Word file. Share sends a PNG photo (one per month), since many phones can\'t share Word files.')) : null,
       grp('Backup',
         el('div', { class: 'it col' },
           el('div', { class: 'row2' },
@@ -951,7 +949,7 @@ function settingsSheet() {
             el('button', { class: 'btn', onclick: () => fileIn.click() }, 'Restore…')),
           fileIn)),
       archCard,
-      el('p', { class: 'note' }, `${APP_NAME} ${VERSION}. Everything stays on this phone. Clearing Chrome site data deletes it — keep monthly exports or a backup.`),
+      el('p', { class: 'note' }, `${APP_NAME} ${VERSION}. Everything stays on this phone. Clearing this app's data deletes it — keep monthly exports or a backup.`),
     ].filter(Boolean);
     sh.append(...bits);
   }, 'full');
@@ -1041,4 +1039,63 @@ function refitCells() { requestAnimationFrame(() => document.querySelectorAll('#
   document.addEventListener('pointerup', end, true);
   document.addEventListener('pointercancel', end, true);
   document.addEventListener('click', e => { if (e.target.closest?.('.rz')) { e.preventDefault(); e.stopPropagation(); } }, true);
+})();
+
+/* ---------------- keyboard Done ----------------
+   Every typing field gets a "Done" key on the phone keyboard (enterkeyhint) and Enter closes the keyboard.
+   On touch phones a slim bar with Done sits just above the keyboard while a field is focused. */
+(() => {
+  const TYPING = 'textarea, input:not([type]), input[type=text], input[type=number], input[type=search], input[type=email], input[type=tel], input[type=url]';
+  const isTyping = n => n?.matches?.(TYPING) && !n.readOnly && !n.disabled;
+  const multi = n => n.dataset?.multiline != null; // free-form notes: Enter is a new line, Done bar still closes
+  const hint = n => { if (n.matches?.(TYPING) && !n.hasAttribute('enterkeyhint') && !multi(n)) n.setAttribute('enterkeyhint', 'done'); };
+  const tag = root => { if (root.nodeType !== 1) return; hint(root); root.querySelectorAll?.(TYPING).forEach(hint); };
+  tag(document.body);
+  new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(tag))).observe(document.body, { childList: true, subtree: true });
+
+  // Enter / Done key on the keyboard: just close it (fields with their own Enter handling run first and win)
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' || e.defaultPrevented || e.isComposing || e.shiftKey) return;
+    const t = e.target; if (!isTyping(t) || multi(t)) return;
+    e.preventDefault(); t.blur();
+  });
+
+  const bar = el('div', { class: 'kbbar', id: 'kbBar', hidden: true },
+    el('span', { class: 'kbl' }),
+    el('button', { class: 'kbdone', type: 'button', id: 'kbDone' }, 'Done'));
+  document.body.append(bar);
+  const btn = bar.querySelector('.kbdone'), lbl = bar.querySelector('.kbl');
+  btn.addEventListener('pointerdown', e => e.preventDefault()); // keep focus until the tap lands
+  btn.addEventListener('mousedown', e => e.preventDefault());
+  btn.addEventListener('click', () => { const a = document.activeElement; if (isTyping(a)) a.blur(); hide(); });
+
+  const vv = window.visualViewport;
+  const coarse = matchMedia('(pointer: coarse)');
+  let baseH = innerHeight, cur = null, sawKb = false;
+  const shrunk = () => Math.min(innerHeight, vv ? vv.height : innerHeight) < baseH - 120;
+  const kbUp = () => shrunk() || (coarse.matches && !sawKb);
+  function place() {
+    if (bar.hidden) return;
+    const bottom = vv ? Math.max(0, innerHeight - (vv.offsetTop + vv.height)) : 0;
+    bar.style.bottom = bottom + 'px';
+    const r = cur?.getBoundingClientRect(), top = bar.getBoundingClientRect().top;
+    if (r && r.bottom > top - 4) cur.scrollIntoView({ block: 'center' });
+  }
+  function show(t) {
+    cur = t;
+    lbl.textContent = t.getAttribute('aria-label') || t.labels?.[0]?.textContent || t.placeholder || '';
+    if (!kbUp()) return hide();
+    bar.hidden = false; document.body.classList.add('kbon'); requestAnimationFrame(place);
+  }
+  function hide() { bar.hidden = true; document.body.classList.remove('kbon'); cur = null; sawKb = false; }
+  document.addEventListener('focusin', e => { if (isTyping(e.target)) { const keep = sawKb && !bar.hidden; show(e.target); sawKb = keep; } });
+  document.addEventListener('focusout', () => setTimeout(() => { if (!isTyping(document.activeElement)) hide(); }, 60));
+  const onVV = () => {
+    if (!document.activeElement || !isTyping(document.activeElement)) baseH = Math.max(innerHeight, vv ? vv.height : 0);
+    if (!cur) return;
+    if (shrunk()) { const c = cur; if (bar.hidden) show(c); sawKb = true; place(); }
+    else if (sawKb) { bar.hidden = true; document.body.classList.remove('kbon'); sawKb = false; } // keyboard closed with the field still focused
+    else place();
+  };
+  vv?.addEventListener('resize', onVV); vv?.addEventListener('scroll', onVV); addEventListener('resize', onVV);
 })();
