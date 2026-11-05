@@ -1,7 +1,7 @@
 /* Daily Log: monthly project sheets on this phone (localStorage). Keep it simple. */
 'use strict';
 const APP_NAME = 'Daily Log';
-const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.1';
+const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.3';
 const COL_TYPES = [
   { id: 'tick', label: 'Tick', hint: 'Tap cycles blank → ✓ → ✗' },
   { id: 'text', label: 'Text', hint: 'Anything' },
@@ -177,23 +177,27 @@ let sheetOpen = null;
 function openSheet(build, cls = '') {
   hideToast();
   const had = !!sheetOpen; closeSheet(true, had);
-  const scrim = el('div', { class: 'scrim', onclick: () => closeSheet() });
+  const opened = Date.now();
+  const scrim = el('div', { class: 'scrim', onclick: () => { if (Date.now() - opened > 450) closeSheet(); } });
   const sh = el('div', { class: 'sheet ' + cls, role: 'dialog' });
   if (!cls.includes('full')) sh.append(el('div', { class: 'grab' }));
   $('#sheets').append(scrim, sh);
   sheetOpen = { scrim, sh, onClose: null };
   build(sh, sheetOpen);
-  if (!had) history.pushState({ sheet: 1 }, '');
+  if (!history.state?.sheet) history.pushState({ sheet: 1 }, '');
   requestAnimationFrame(() => { scrim.classList.add('on'); sh.classList.add('on'); });
   return sh;
 }
 function closeSheet(silent, fromPop) {
   if (!sheetOpen) return; const { scrim, sh, onClose } = sheetOpen; sheetOpen = null;
   onClose?.(); scrim.remove(); sh.remove();
-  if (!fromPop && history.state?.sheet) history.back();
+  // Defer the history pop: if another sheet opens right away (menu → Rename), it reuses this entry
+  // instead of being closed by the late popstate.
+  if (!fromPop) setTimeout(() => { if (!sheetOpen && history.state?.sheet) { ignorePop = true; history.back(); } }, 0);
   if (!silent) render();
 }
-addEventListener('popstate', () => { if (sheetOpen) closeSheet(false, true); });
+let ignorePop = false;
+addEventListener('popstate', () => { if (ignorePop) { ignorePop = false; return; } if (sheetOpen) closeSheet(false, true); });
 const head = (title, extra) => el('div', { class: 'sh-h' }, el('h2', {}, title), extra || null, el('button', { class: 'ib', 'aria-label': 'Close', html: ICON.x, onclick: () => closeSheet() }));
 function choose(title, msg, buttons) {
   return new Promise(res => {
@@ -292,17 +296,15 @@ function renderTabs() {
     const on = p.id === D.activeId;
     const filled = isDayFilled(p, tk, td);
     const b = el('button', {
-      class: 'tab' + (on ? ' on' : '') + (filled ? '' : ' dim'),
+      class: 'tab' + (on ? ' on' : '') + (filled ? '' : ' todo'),
       role: 'tab', 'aria-selected': on,
       onclick: () => { D.activeId = p.id; save(); scrollTodayOnce = true; render(); },
     }, p.name);
-    // green/peach dot = today filled; muted = not yet
-    b.append(el('span', { class: 'dot', title: filled ? 'Today filled' : 'Today empty' }));
+    // accent dot = today still needs filling; no dot once filled (targets don't count)
+    if (!filled) b.append(el('span', { class: 'dot', title: 'Today not filled yet' }));
     // long-press → project menu
-    let t; b.addEventListener('touchstart', () => { t = setTimeout(() => { t = null; projectMenu(p); }, 480); }, { passive: true });
-    b.addEventListener('touchend', () => clearTimeout(t));
+    bindLongPress(b, () => projectMenu(p));
     b.addEventListener('touchmove', () => clearTimeout(t), { passive: true });
-    b.addEventListener('contextmenu', e => { e.preventDefault(); projectMenu(p); });
     box.append(b);
   });
 }
@@ -311,11 +313,17 @@ function renderBanner() {
   const p = active(); if (!p) return;
   // Fill yesterday?
   const y = yesterdayInfo();
-  if (!isDayFilled(p, y.ym, y.day)) {
+  const dk = 'yd:' + p.id + ':' + dateKey(curYM(), todayDay());
+  if (!isDayFilled(p, y.ym, y.day) && !D.notified[dk]) {
     b.hidden = false;
     b.append(
       el('span', { class: 't' }, `Yesterday called. It felt ignored. (${y.label})`),
-      el('button', { class: 'btn', onclick: () => { viewYM = y.ym; scrollTodayOnce = false; render(); setTimeout(() => scrollToDay(y.day), 50); } }, 'Open'));
+      el('button', { class: 'btn', id: 'ydOpen', onclick: () => openYesterday() }, 'Open'),
+      el('button', { class: 'btn ghost', id: 'ydDismiss', onclick: () => {
+        // keep only today's dismiss markers so the store doesn't grow
+        Object.keys(D.notified).forEach(k => { if (k.startsWith('yd:') && !k.endsWith(dateKey(curYM(), todayDay()))) delete D.notified[k]; });
+        D.notified[dk] = true; save(); renderBanner();
+      } }, 'Dismiss'));
     return;
   }
   // Catch-up list at/after 10pm if enabled and some projects empty today
@@ -365,13 +373,28 @@ function renderGrid(p) {
     requestAnimationFrame(() => scrollToDay(td));
   }
 }
+function openYesterday() {
+  const y = yesterdayInfo();
+  viewYM = y.ym; scrollTodayOnce = false; render();
+  requestAnimationFrame(() => {
+    scrollToDay(y.day);
+    const row = $(`#grid tr[data-day="${y.day}"]`);
+    if (row) { row.classList.add('flash'); setTimeout(() => row.classList.remove('flash'), 1600); }
+  });
+}
 function scrollToDay(day) {
   const row = $(`#grid tr[data-day="${day}"]`);
   const sc = $('#scroller');
   if (!row || !sc) return;
   // Only scroll the grid scroller — never the page (that hid the month bar under the sticky header).
-  const top = row.offsetTop - sc.clientHeight / 2 + row.offsetHeight / 2;
-  sc.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  if (sc.scrollHeight > sc.clientHeight + 1) {
+    const top = row.offsetTop - sc.clientHeight / 2 + row.offsetHeight / 2;
+    sc.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  } else {
+    // grid isn't height-bounded on this layout: the page scrolls, so centre the row in the window
+    const r = row.getBoundingClientRect();
+    window.scrollTo({ top: Math.max(0, scrollY + r.top - innerHeight / 2 + r.height / 2), behavior: 'smooth' });
+  }
 }
 function cellControl(p, day, c) {
   const cells = dayCells(p, viewYM, day);
@@ -445,16 +468,20 @@ function commitCell(p, day, c, raw) {
   cy.hidden = !(viewYM === curYM() && !isDayFilled(p, viewYM, todayDay()) && isDayFilled(p, y.ym, y.day));
 }
 function bindLongPress(node, fn) {
-  let t;
-  const start = () => { t = setTimeout(() => { t = null; fn(); }, 480); };
+  // One long-press = one call. Swallow the click/contextmenu that follows it, so the
+  // finger lifting doesn't land on the new sheet's backdrop and close it.
+  let t, fired = 0;
+  const fire = () => { if (Date.now() - fired < 800) return; fired = Date.now(); fn(); };
+  const start = () => { clearTimeout(t); t = setTimeout(() => { t = null; fire(); }, 480); };
   const cancel = () => clearTimeout(t);
   node.addEventListener('touchstart', start, { passive: true });
-  node.addEventListener('touchend', cancel);
+  node.addEventListener('touchend', e => { cancel(); if (Date.now() - fired < 800 && e.cancelable) e.preventDefault(); });
   node.addEventListener('touchmove', cancel, { passive: true });
   node.addEventListener('mousedown', start);
   node.addEventListener('mouseup', cancel);
   node.addEventListener('mouseleave', cancel);
-  node.addEventListener('contextmenu', e => { e.preventDefault(); fn(); });
+  node.addEventListener('contextmenu', e => { e.preventDefault(); cancel(); fire(); });
+  node.addEventListener('click', e => { if (Date.now() - fired < 800) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
 }
 
 /* ---------------- actions: projects ---------------- */

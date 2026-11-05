@@ -8,7 +8,7 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:16px;-webkit-font-smoothing:antialiased}
-body{min-height:100dvh;overscroll-behavior-y:contain;display:flex;flex-direction:column}
+body{height:100dvh;overflow:hidden;overscroll-behavior-y:contain;display:flex;flex-direction:column}
 button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;touch-action:manipulation}
 input,textarea,select{font:inherit;color:inherit}
 svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
@@ -22,7 +22,6 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .tab{flex:none;height:40px;padding:0 14px;border-radius:99px;background:var(--s2);color:var(--fg2);font-size:14px;font-weight:600;white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;position:relative}
 .tab.on{background:var(--ac-dim);color:var(--ac)}
 .tab .dot{position:absolute;top:8px;right:8px;width:6px;height:6px;border-radius:50%;background:var(--ac)}
-.tab.dim .dot{background:var(--fg3)}
 .ib{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;color:var(--fg2);flex:none}
 .ib:active{background:var(--s2)}
 .add-p{color:var(--ac)}
@@ -50,7 +49,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .info:active{background:var(--s2)}
 .meta{padding:6px 16px 4px;color:var(--fg3);font-size:12.5px}
 
-.scroller{flex:1;overflow:auto;margin-top:4px;-webkit-overflow-scrolling:touch;padding:0 0 8px}
+.scroller{flex:1;min-height:0;overflow:auto;margin-top:4px;-webkit-overflow-scrolling:touch;padding:0 0 8px}
 .grid{border-collapse:separate;border-spacing:0;width:max-content;table-layout:auto;font-size:15px}
 .grid th,.grid td{border-bottom:1px solid var(--line);vertical-align:middle}
 .grid thead th{position:sticky;top:0;z-index:2;background:var(--bg);font-size:12px;font-weight:650;color:var(--fg3);text-transform:uppercase;letter-spacing:.04em;padding:10px 8px;text-align:center;white-space:nowrap}
@@ -192,3 +191,7 @@ input,textarea,select,[contenteditable],[contenteditable] *{-webkit-user-select:
 .ch.yes{color:#e8e6e1}
 .ch.no{color:#9a9a9a}
 .grid td.locked .ch.yes,.grid td.locked .ch.no{color:var(--fg3)}
+
+.banner .btn.ghost{background:transparent;color:var(--fg2);box-shadow:inset 0 0 0 1px var(--line2)}
+.grid tr.flash td{animation:flash 1.6s ease-out}
+@keyframes flash{0%,40%{background:rgba(var(--acr),.22)}100%{background:transparent}}
