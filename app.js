@@ -1,7 +1,7 @@
 /* Daily Log: monthly project sheets on this phone (localStorage). Keep it simple. */
 'use strict';
 const APP_NAME = 'Daily Log';
-const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.8';
+const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.9';
 const COL_TYPES = [
   { id: 'tick', label: 'Tick', hint: 'Tap cycles blank → ✓ → ✗' },
   { id: 'text', label: 'Text', hint: 'Anything' },
@@ -144,24 +144,6 @@ function slug(s) {
 let viewYM = curYM();
 const editCols = new Set(); // locked columns temporarily unlocked (not saved)
 const isLockedNow = c => c.locked && !editCols.has(c.id);
-const hasLockedVals = (p, ym) => p.columns.some(c => c.locked && Object.values(p.months[ym]?.days || {}).some(x => x[c.id] != null && x[c.id] !== ''));
-function copyTargets(p, from, to) {
-  const lc = p.columns.filter(c => c.locked); let n = 0;
-  const dim = daysIn(to);
-  for (let d = 1; d <= dim; d++) {
-    const src = p.months[from]?.days?.[d]; if (!src) continue;
-    lc.forEach(c => { const v = src[c.id]; if (v == null || v === '') return; const dst = dayCells(p, to, d); if (dst[c.id] == null || dst[c.id] === '') { dst[c.id] = v; n++; } });
-  }
-  // prune empty day objects created by dayCells
-  Object.entries(p.months[to]?.days || {}).forEach(([d, x]) => { if (!Object.keys(x).length) delete p.months[to].days[d]; });
-  p.copyAsked = to; save(); return n;
-}
-function maybeOfferTargets(p) {
-  const ym = curYM(), prev = addMonth(ym, -1);
-  if (viewYM !== ym || p.copyAsked === ym || !hasLockedVals(p, prev) || hasLockedVals(p, ym)) return;
-  p.copyAsked = ym; save();
-  toast("Copy last month's targets?", { label: 'Copy', fn: () => { const n = copyTargets(p, prev, ym); toast(n ? `Copied ${n} target${n === 1 ? '' : 's'}` : 'Nothing to copy'); render(); } }, 10000);
-}
 let scrollTodayOnce = true;
 
 /* ---------------- toast / sheets ---------------- */
@@ -286,7 +268,6 @@ function render() {
   const todayEmpty = isCur && !isDayFilled(p, viewYM, td);
   const yestHas = isDayFilled(p, y.ym, y.day);
   cy.hidden = !(todayEmpty && yestHas);
-  maybeOfferTargets(p);
 }
 function renderTabs() {
   const box = $('#tabs'); box.innerHTML = '';
@@ -499,13 +480,11 @@ async function renameProject(p) {
 async function projectMenu(p) {
   if (!p) p = active(); if (!p) return;
   const v = await choose(p.name, null, [
-    ...(p.columns.some(c => c.locked) ? [{ label: "Copy last month's targets", v: 'copy' }] : []),
     { label: 'Rename', v: 'rename' },
     { label: p.remind ? `Reminder on · ${fmt12(p.remindAt)}` : 'Set reminder', v: 'remind' },
     { label: 'Archive', v: 'archive', cls: 'dng' },
     { label: 'Cancel', v: null },
   ]);
-  if (v === 'copy') { const n = copyTargets(p, addMonth(viewYM, -1), viewYM); render(); toast(n ? `Copied ${n} target${n === 1 ? '' : 's'}` : 'Nothing new to copy'); }
   if (v === 'rename') renameProject(p);
   else if (v === 'remind') reminderSheet(p);
   else if (v === 'archive') archiveProject(p);
@@ -572,7 +551,6 @@ async function columnMenu(c) {
   const v = await choose(c.name, `Type: ${c.type}${c.locked ? (editing ? ' · locked, editing now' : ' · locked') : ''}`, [
     ...(c.locked ? [editing ? { label: 'Done (lock again)', v: 'done', cls: 'pri' } : { label: 'Edit (type targets)', v: 'edit', cls: 'pri' }] : []),
     { label: c.locked ? 'Unlock column' : 'Lock column', v: 'lock' },
-    ...(c.locked ? [{ label: "Copy last month's targets", v: 'copy' }] : []),
     ...(c.w ? [{ label: 'Auto width', v: 'autow' }] : []),
     { label: 'Rename', v: 'rename' },
     { label: 'Move left', v: 'left' },
@@ -584,7 +562,6 @@ async function columnMenu(c) {
   if (v === 'edit') { editCols.add(c.id); render(); toast('Editing ' + c.name + ' — tap ⋯ Done when finished'); return; }
   if (v === 'done') { editCols.delete(c.id); render(); toast(c.name + ' locked'); return; }
   if (v === 'lock') { c.locked = !c.locked; editCols.delete(c.id); save(); render(); toast(c.locked ? c.name + ' locked' : c.name + ' unlocked'); return; }
-  if (v === 'copy') { const n = copyTargets(p, addMonth(viewYM, -1), viewYM); render(); toast(n ? `Copied ${n} target${n === 1 ? '' : 's'} from ${monthLabel(addMonth(viewYM, -1))}` : 'Nothing new to copy'); return; }
   if (v === 'rename') {
     const name = await askText('Rename column', { value: c.name, max: 40 });
     if (name && name !== c.name) { c.name = name; save(); render(); }
@@ -962,8 +939,7 @@ function settingsSheet() {
         el('div', { class: 'it col' }, exSeg, monBox, rangeBox,
           el('div', { class: 'row2', style: 'margin-top:8px' },
             el('button', { class: 'btn pri', onclick: () => runExport(false) }, 'Save'),
-            el('button', { class: 'btn', onclick: () => runExport(true).catch(e => toast('Share failed: ' + (e?.message || e))) }, 'Share'))),
-        el('p', { class: 'note', style: 'margin:8px 4px 0' }, 'Save downloads a Word file. Share sends a PNG photo (one per month), since many phones can\'t share Word files.')) : null,
+            el('button', { class: 'btn', onclick: () => runExport(true).catch(e => toast('Share failed: ' + (e?.message || e))) }, 'Share')))) : null,
       grp('Backup',
         el('div', { class: 'it col' },
           el('div', { class: 'row2' },
