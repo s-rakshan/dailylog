@@ -1,7 +1,7 @@
 /* Daily Log: monthly project sheets on this phone (localStorage). Keep it simple. */
 'use strict';
 const APP_NAME = 'Daily Log';
-const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.6';
+const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.7';
 const COL_TYPES = [
   { id: 'tick', label: 'Tick', hint: 'Tap cycles blank → ✓ → ✗' },
   { id: 'text', label: 'Text', hint: 'Anything' },
@@ -32,7 +32,7 @@ const ICON = {
 /* ---------------- data ---------------- */
 const fresh = () => ({
   v: SCHEMA,
-  settings: { catchup: false, vibrate: true, theme: 'peach' },
+  settings: { catchup: false, vibrate: true, theme: 'peach', appRemind: false, appRemindAt: '20:00' },
   projects: [],
   activeId: null,
   // reminder skip markers: { 'projId:YYYY-MM-DD': true, catchup:'YYYY-MM-DD' }
@@ -666,6 +666,11 @@ function reminderSheet(p) {
       el('p', { class: 'note' }, 'Some phones delay reminders to save battery. Opening the app now and then helps them arrive on time.'));
   });
 }
+const APP_REMIND_TITLE = APP_NAME + ' would like a word';
+function openProjectToday(id) {
+  if (!D.projects.find(p => p.id === id && !p.archived)) return;
+  D.activeId = id; viewYM = curYM(); scrollTodayOnce = true; save(); render();
+}
 function checkReminders() {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   const d = now();
@@ -681,6 +686,25 @@ function checkReminders() {
     D.notified[key] = true; save();
     notify(p.name, 'Still empty today — tap to fill.', { tag: 'proj-' + p.id, data: { projectId: p.id, url: './' } });
   });
+  // app-wide reminder: one ping a day for the projects still empty. A project whose own reminder already
+  // pinged today is left out; one that's included here has its own reminder marked done (no double alert).
+  if (S().appRemind) {
+    const [ah, am] = (S().appRemindAt || '20:00').split(':').map(Number);
+    const akey = 'app:' + today;
+    if (mins >= ah * 60 + am && !D.notified[akey]) {
+      const empty = liveProjects().filter(p => !isDayFilled(p, curYM(), todayDay()) && !D.notified[p.id + ':' + today]);
+      if (empty.length) {
+        D.notified[akey] = true;
+        empty.forEach(p => { if (p.remind) D.notified[p.id + ':' + today] = true; });
+        save();
+        // Just open the app — no project jump and no empty-project list.
+        const body = empty.length === 1
+          ? `${empty[0].name} is still empty today — tap to fill.`
+          : `Still empty today: ${empty.map(p => p.name).join(', ')}`;
+        notify(APP_REMIND_TITLE, body, { tag: 'app-remind', data: { url: './' } });
+      }
+    }
+  }
   if (S().catchup && mins >= 22 * 60) {
     const ckey = 'catchup:' + today;
     if (!D.notified[ckey]) {
@@ -930,6 +954,8 @@ function settingsSheet() {
       grp('Theme', themePicker(S().theme || 'peach', id => { S().theme = id; save(); })),
       grp('Reminders',
         it('10 PM catch-up', 'Lists only the projects still empty today', sw(S().catchup, v => { S().catchup = v; save(); if (v) askNotif(); })),
+        it('Daily Log reminder', 'One ping a day if any project is still empty. Skips projects that already got their own reminder.', sw(S().appRemind, v => { S().appRemind = v; save(); if (v) askNotif(); })),
+        it('Reminder time', null, el('input', { class: 'tin tin-time', type: 'time', id: 'appRemindAt', value: S().appRemindAt || '20:00', onchange: e => { S().appRemindAt = e.target.value || '20:00'; save(); } })),
         it('Vibrate on tick', null, sw(S().vibrate, v => { S().vibrate = v; save(); })),
         it('Notifications', perm === 'denied' ? 'Turn on notifications for this app in your phone or browser settings' : 'Needed for reminders to reach you', nb)),
       p ? grp('Export · ' + p.name,
@@ -982,9 +1008,8 @@ $('#copyYest').onclick = () => copyYesterday();
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminders(); render(); } });
 navigator.serviceWorker?.addEventListener('message', e => {
-  if (e.data?.type === 'open' && e.data.projectId) {
-    D.activeId = e.data.projectId; viewYM = curYM(); scrollTodayOnce = true; save(); render();
-  }
+  if (e.data?.type !== 'open') return;
+  if (e.data.projectId) openProjectToday(e.data.projectId);
 });
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   const hadSW = !!navigator.serviceWorker.controller; let reloaded = false;
@@ -993,6 +1018,13 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
 }
 
 render();
+{ // opened from a notification while the app was closed
+  const q = new URLSearchParams(location.search);
+  if (q.get('p')) {
+    history.replaceState(null, '', location.pathname);
+    openProjectToday(q.get('p'));
+  }
+}
 checkReminders();
 setInterval(checkReminders, 60000);
 
@@ -1042,60 +1074,42 @@ function refitCells() { requestAnimationFrame(() => document.querySelectorAll('#
 })();
 
 /* ---------------- keyboard Done ----------------
-   Every typing field gets a "Done" key on the phone keyboard (enterkeyhint) and Enter closes the keyboard.
-   On touch phones a slim bar with Done sits just above the keyboard while a field is focused. */
+   Every typing field gets a "Done" key on the phone keyboard (enterkeyhint) and Enter closes the keyboard. */
 (() => {
   const TYPING = 'textarea, input:not([type]), input[type=text], input[type=number], input[type=search], input[type=email], input[type=tel], input[type=url]';
   const isTyping = n => n?.matches?.(TYPING) && !n.readOnly && !n.disabled;
-  const multi = n => n.dataset?.multiline != null; // free-form notes: Enter is a new line, Done bar still closes
+  const multi = n => n.dataset?.multiline != null; // free-form notes: Enter is a new line
   const hint = n => { if (n.matches?.(TYPING) && !n.hasAttribute('enterkeyhint') && !multi(n)) n.setAttribute('enterkeyhint', 'done'); };
   const tag = root => { if (root.nodeType !== 1) return; hint(root); root.querySelectorAll?.(TYPING).forEach(hint); };
   tag(document.body);
   new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(tag))).observe(document.body, { childList: true, subtree: true });
-
   // Enter / Done key on the keyboard: just close it (fields with their own Enter handling run first and win)
   document.addEventListener('keydown', e => {
     if (e.key !== 'Enter' || e.defaultPrevented || e.isComposing || e.shiftKey) return;
     const t = e.target; if (!isTyping(t) || multi(t)) return;
     e.preventDefault(); t.blur();
   });
+})();
 
-  const bar = el('div', { class: 'kbbar', id: 'kbBar', hidden: true },
-    el('span', { class: 'kbl' }),
-    el('button', { class: 'kbdone', type: 'button', id: 'kbDone' }, 'Done'));
-  document.body.append(bar);
-  const btn = bar.querySelector('.kbdone'), lbl = bar.querySelector('.kbl');
-  btn.addEventListener('pointerdown', e => e.preventDefault()); // keep focus until the tap lands
-  btn.addEventListener('mousedown', e => e.preventDefault());
-  btn.addEventListener('click', () => { const a = document.activeElement; if (isTyping(a)) a.blur(); hide(); });
-
-  const vv = window.visualViewport;
-  const coarse = matchMedia('(pointer: coarse)');
-  let baseH = innerHeight, cur = null, sawKb = false;
-  const shrunk = () => Math.min(innerHeight, vv ? vv.height : innerHeight) < baseH - 120;
-  const kbUp = () => shrunk() || (coarse.matches && !sawKb);
+/* While a cell is being typed in, the bottom bar (+ Column / Copy yesterday) rides just above the keyboard
+   and shows Done on the right. Sheets (add column etc.) never get it. */
+(() => {
+  const dock = $('#dock');
+  const done = el('button', { class: 'dockdone', id: 'dockDone', type: 'button', hidden: true }, 'Done');
+  dock.append(done);
+  const isCell = n => n?.matches?.('#grid .cin') && !n.readOnly;
+  const coarse = matchMedia('(pointer: coarse)'), vv = window.visualViewport;
+  done.addEventListener('pointerdown', e => e.preventDefault()); // keep the cell focused until the tap lands
+  done.addEventListener('mousedown', e => e.preventDefault());
+  done.addEventListener('click', () => { const a = document.activeElement; if (isCell(a)) a.blur(); off(); });
   function place() {
-    if (bar.hidden) return;
-    const bottom = vv ? Math.max(0, innerHeight - (vv.offsetTop + vv.height)) : 0;
-    bar.style.bottom = bottom + 'px';
-    const r = cur?.getBoundingClientRect(), top = bar.getBoundingClientRect().top;
-    if (r && r.bottom > top - 4) cur.scrollIntoView({ block: 'center' });
+    const lift = vv ? Math.max(0, innerHeight - (vv.offsetTop + vv.height)) : 0;
+    dock.style.bottom = lift ? lift + 'px' : '';
   }
-  function show(t) {
-    cur = t;
-    lbl.textContent = t.getAttribute('aria-label') || t.labels?.[0]?.textContent || t.placeholder || '';
-    if (!kbUp()) return hide();
-    bar.hidden = false; document.body.classList.add('kbon'); requestAnimationFrame(place);
-  }
-  function hide() { bar.hidden = true; document.body.classList.remove('kbon'); cur = null; sawKb = false; }
-  document.addEventListener('focusin', e => { if (isTyping(e.target)) { const keep = sawKb && !bar.hidden; show(e.target); sawKb = keep; } });
-  document.addEventListener('focusout', () => setTimeout(() => { if (!isTyping(document.activeElement)) hide(); }, 60));
-  const onVV = () => {
-    if (!document.activeElement || !isTyping(document.activeElement)) baseH = Math.max(innerHeight, vv ? vv.height : 0);
-    if (!cur) return;
-    if (shrunk()) { const c = cur; if (bar.hidden) show(c); sawKb = true; place(); }
-    else if (sawKb) { bar.hidden = true; document.body.classList.remove('kbon'); sawKb = false; } // keyboard closed with the field still focused
-    else place();
-  };
-  vv?.addEventListener('resize', onVV); vv?.addEventListener('scroll', onVV); addEventListener('resize', onVV);
+  function on() { done.hidden = false; document.body.classList.add('celledit'); place(); }
+  function off() { done.hidden = true; document.body.classList.remove('celledit'); dock.style.bottom = ''; }
+  document.addEventListener('focusin', e => { if (isCell(e.target) && (coarse.matches || (vv && vv.height < innerHeight - 120))) on(); });
+  document.addEventListener('focusout', () => setTimeout(() => { if (!isCell(document.activeElement)) off(); }, 60));
+  const onVV = () => { if (!done.hidden) place(); };
+  vv?.addEventListener('resize', onVV); vv?.addEventListener('scroll', onVV);
 })();

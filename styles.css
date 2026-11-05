@@ -200,11 +200,7 @@ input,textarea,select,[contenteditable],[contenteditable] *{-webkit-user-select:
 .banner .btn.ghost{background:transparent;color:var(--fg2);box-shadow:inset 0 0 0 1px var(--line2)}
 .grid tr.flash td{animation:flash 1.6s ease-out}
 @keyframes flash{0%,40%{background:rgba(var(--acr),.22)}100%{background:transparent}}
-/* keyboard Done bar (sits just above the on-screen keyboard while typing) */
-.kbbar{position:fixed;left:0;right:0;bottom:0;z-index:25;height:44px;display:flex;align-items:center;gap:8px;padding:0 6px 0 16px;background:var(--s2);border-top:1px solid var(--line2)}
-.kbbar[hidden]{display:none}
-.kbl{flex:1;min-width:0;color:var(--fg3);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.kbdone{flex:none;height:36px;padding:0 14px;border-radius:10px;color:var(--ac);font-size:16px;font-weight:700}
-.kbdone:active{background:var(--ac-dim)}
-body.kbon .dock{visibility:hidden}
-body.kbon .sheet{padding-bottom:calc(60px + var(--sab))}
+/* cell editing: Done at the right end of the bottom bar, which sits above the keyboard */
+.dockdone{margin-left:auto;height:56px;padding:0 20px;border-radius:18px;background:var(--s2);border:1px solid var(--line2);color:var(--fg);font-weight:700;font-size:16px}
+.dockdone[hidden]{display:none}
+.dockdone:active{background:var(--s3)}
