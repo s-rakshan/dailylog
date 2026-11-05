@@ -1,7 +1,7 @@
 /* Daily Log: monthly project sheets on this phone (localStorage). Keep it simple. */
 'use strict';
 const APP_NAME = 'Daily Log';
-const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.0.1';
+const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.1.0';
 const COL_TYPES = [
   { id: 'tick', label: 'Tick', hint: 'Tap cycles blank → ✓ → ✗' },
   { id: 'text', label: 'Text', hint: 'Anything' },
@@ -39,7 +39,7 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 function normCol(c) {
   if (!c || !c.name) return null;
   const type = ['tick', 'text', 'times', 'number'].includes(c.type) ? c.type : 'text';
-  return { id: String(c.id || uid()), name: String(c.name).slice(0, 40), type };
+  return { id: String(c.id || uid()), name: String(c.name).slice(0, 40), type, locked: !!c.locked };
 }
 function normProject(p) {
   if (!p || !p.name) return null;
@@ -65,6 +65,7 @@ function normProject(p) {
     columns: (Array.isArray(p.columns) ? p.columns : []).map(normCol).filter(Boolean),
     months,
     remind: !!p.remind,
+    copyAsked: /^\d{4}-\d{2}$/.test(p.copyAsked) ? p.copyAsked : '',
     remindAt: /^\d{2}:\d{2}$/.test(p.remindAt) ? p.remindAt : '09:00',
   };
 }
@@ -121,6 +122,7 @@ function isDayFilled(p, ym, day) {
   const cells = p.months[ym]?.days?.[day];
   if (!cells) return false;
   return p.columns.some(c => {
+    if (c.locked) return false; // targets don't count as logging
     const v = cells[c.id];
     return v != null && String(v).trim() !== '';
   });
@@ -136,6 +138,26 @@ function slug(s) {
 
 /* ---------------- view state ---------------- */
 let viewYM = curYM();
+const editCols = new Set(); // locked columns temporarily unlocked (not saved)
+const isLockedNow = c => c.locked && !editCols.has(c.id);
+const hasLockedVals = (p, ym) => p.columns.some(c => c.locked && Object.values(p.months[ym]?.days || {}).some(x => x[c.id] != null && x[c.id] !== ''));
+function copyTargets(p, from, to) {
+  const lc = p.columns.filter(c => c.locked); let n = 0;
+  const dim = daysIn(to);
+  for (let d = 1; d <= dim; d++) {
+    const src = p.months[from]?.days?.[d]; if (!src) continue;
+    lc.forEach(c => { const v = src[c.id]; if (v == null || v === '') return; const dst = dayCells(p, to, d); if (dst[c.id] == null || dst[c.id] === '') { dst[c.id] = v; n++; } });
+  }
+  // prune empty day objects created by dayCells
+  Object.entries(p.months[to]?.days || {}).forEach(([d, x]) => { if (!Object.keys(x).length) delete p.months[to].days[d]; });
+  p.copyAsked = to; save(); return n;
+}
+function maybeOfferTargets(p) {
+  const ym = curYM(), prev = addMonth(ym, -1);
+  if (viewYM !== ym || p.copyAsked === ym || !hasLockedVals(p, prev) || hasLockedVals(p, ym)) return;
+  p.copyAsked = ym; save();
+  toast("Copy last month's targets?", { label: 'Copy', fn: () => { const n = copyTargets(p, prev, ym); toast(n ? `Copied ${n} target${n === 1 ? '' : 's'}` : 'Nothing to copy'); render(); } }, 10000);
+}
 let scrollTodayOnce = true;
 
 /* ---------------- toast / sheets ---------------- */
@@ -254,6 +276,7 @@ function render() {
   const todayEmpty = isCur && !isDayFilled(p, viewYM, td);
   const yestHas = isDayFilled(p, y.ym, y.day);
   cy.hidden = !(todayEmpty && yestHas);
+  maybeOfferTargets(p);
 }
 function renderTabs() {
   const box = $('#tabs'); box.innerHTML = '';
@@ -310,8 +333,8 @@ function renderGrid(p) {
   const hr = el('tr', {},
     el('th', { class: 'day' }, 'Day'),
     ...p.columns.map(c => el('th', {},
-      el('button', { class: 'thbtn', title: 'Edit column', onclick: () => columnMenu(c) },
-        el('span', {}, c.name)))));
+      el('button', { class: 'thbtn' + (c.locked ? ' lk' : ''), title: 'Edit column', onclick: () => columnMenu(c) },
+        el('span', {}, c.name), c.locked ? el('i', { class: 'lki' }, editCols.has(c.id) ? '✎' : '🔒') : null))));
   if (!p.columns.length) hr.append(el('th', {}, el('span', { style: 'color:var(--fg3);font-weight:500;text-transform:none;letter-spacing:0' }, 'Add a column →')));
   thead.append(hr); g.append(thead);
   const tb = el('tbody');
@@ -324,7 +347,7 @@ function renderGrid(p) {
     }, String(day), el('small', {}, weekday(viewYM, day)));
     bindLongPress(dayBtn, () => clearDay(p, day));
     tr.append(el('td', { class: 'day' }, dayBtn));
-    p.columns.forEach(c => tr.append(el('td', { class: 'cell ' + c.type }, cellControl(p, day, c))));
+    p.columns.forEach(c => tr.append(el('td', { class: 'cell ' + c.type + (c.locked ? (isLockedNow(c) ? ' locked' : ' editing') : '') }, cellControl(p, day, c))));
     if (!p.columns.length) tr.append(el('td', { class: 'cell' }, el('span', { style: 'color:var(--fg3);font-size:13px;padding:0 8px' }, '—')));
     tb.append(tr);
   }
@@ -345,11 +368,14 @@ function scrollToDay(day) {
 function cellControl(p, day, c) {
   const cells = dayCells(p, viewYM, day);
   const v = cells[c.id] ?? '';
+  const lockedNow = isLockedNow(c);
   if (c.type === 'tick') {
     const cls = v === '✓' ? 'yes' : v === '✗' ? 'no' : '';
     return el('button', {
       class: 'ch ' + cls, type: 'button', 'aria-label': c.name,
+      ...(lockedNow ? { tabindex: -1, 'aria-disabled': 'true' } : {}),
       onclick: () => {
+        if (isLockedNow(c)) return;
         cells[c.id] = cycleTick(v);
         if (!cells[c.id]) delete cells[c.id];
         save();
@@ -360,6 +386,7 @@ function cellControl(p, day, c) {
   }
   const inp = el('textarea', {
     class: 'cin' + (c.type === 'text' ? ' text' : ''), rows: 1, 'data-col': c.id,
+    ...(lockedNow ? { readonly: true, tabindex: -1 } : {}),
     inputmode: c.type === 'number' ? 'decimal' : 'text',
     value: v, placeholder: '',
     'aria-label': `${c.name}, day ${day}`,
@@ -388,6 +415,7 @@ function cellControl(p, day, c) {
   return inp;
 }
 function commitCell(p, day, c, raw) {
+  if (isLockedNow(c)) return;
   const cells = dayCells(p, viewYM, day);
   let v = String(raw ?? '').trim();
   if (c.type === 'times') v = filterTimes(v).trim();
@@ -437,11 +465,13 @@ async function renameProject(p) {
 async function projectMenu(p) {
   if (!p) p = active(); if (!p) return;
   const v = await choose(p.name, null, [
+    ...(p.columns.some(c => c.locked) ? [{ label: "Copy last month's targets", v: 'copy' }] : []),
     { label: 'Rename', v: 'rename' },
     { label: p.remind ? `Reminder on · ${fmt12(p.remindAt)}` : 'Set reminder', v: 'remind' },
     { label: 'Archive', v: 'archive', cls: 'dng' },
     { label: 'Cancel', v: null },
   ]);
+  if (v === 'copy') { const n = copyTargets(p, addMonth(viewYM, -1), viewYM); render(); toast(n ? `Copied ${n} target${n === 1 ? '' : 's'}` : 'Nothing new to copy'); }
   if (v === 'rename') renameProject(p);
   else if (v === 'remind') reminderSheet(p);
   else if (v === 'archive') archiveProject(p);
@@ -481,15 +511,22 @@ async function addColumn() {
       seg.append(b);
     });
     const hint = el('p', { class: 'note', style: 'margin-top:10px' }, COL_TYPES[0].hint);
+    const lockIn = el('input', { type: 'checkbox', id: 'colLock' });
+    const lockRow = el('div', { class: 'fld lockrow' },
+      el('div', {}, el('label', { for: 'colLock', style: 'margin:0' }, 'Locked (targets)'), el('p', { class: 'note', style: 'margin:2px 0 0' }, "Grey and read-only. Use ⋯ Edit to type targets.")),
+      el('label', { class: 'sw' }, lockIn, el('i')));
     sh.append(head('Add column'),
       el('div', { class: 'fld' }, el('label', { for: 'colName' }, 'Name'), nameIn),
       el('div', { class: 'fld' }, el('label', {}, 'Type'), seg, hint),
+      lockRow,
       el('div', { class: 'btns' },
         el('button', { class: 'btn', onclick: () => closeSheet() }, 'Cancel'),
         el('button', { class: 'btn pri', onclick: () => {
           const name = nameIn.value.trim(); if (!name) { nameIn.focus(); return; }
-          p.columns.push({ id: uid(), name, type });
-          save(); closeSheet(); toast('Column added');
+          const col = { id: uid(), name, type, locked: lockIn.checked };
+          p.columns.push(col);
+          if (col.locked) editCols.add(col.id); // start in edit mode so targets can be typed straight away
+          save(); closeSheet(); toast(col.locked ? 'Locked column added — type targets, then ⋯ Done' : 'Column added');
         } }, 'Add')));
     setTimeout(() => nameIn.focus(), 80);
   });
@@ -497,13 +534,21 @@ async function addColumn() {
 async function columnMenu(c) {
   const p = active(); if (!p) return;
   const idx = p.columns.findIndex(x => x.id === c.id);
-  const v = await choose(c.name, `Type: ${c.type}`, [
+  const editing = editCols.has(c.id);
+  const v = await choose(c.name, `Type: ${c.type}${c.locked ? (editing ? ' · locked, editing now' : ' · locked') : ''}`, [
+    ...(c.locked ? [editing ? { label: 'Done (lock again)', v: 'done', cls: 'pri' } : { label: 'Edit (type targets)', v: 'edit', cls: 'pri' }] : []),
+    { label: c.locked ? 'Unlock column' : 'Lock column', v: 'lock' },
+    ...(c.locked ? [{ label: "Copy last month's targets", v: 'copy' }] : []),
     { label: 'Rename', v: 'rename' },
     { label: 'Move left', v: 'left' },
     { label: 'Move right', v: 'right' },
     { label: 'Delete column', v: 'del', cls: 'dng' },
     { label: 'Cancel', v: null },
   ]);
+  if (v === 'edit') { editCols.add(c.id); render(); toast('Editing ' + c.name + ' — tap ⋯ Done when finished'); return; }
+  if (v === 'done') { editCols.delete(c.id); render(); toast(c.name + ' locked'); return; }
+  if (v === 'lock') { c.locked = !c.locked; editCols.delete(c.id); save(); render(); toast(c.locked ? c.name + ' locked' : c.name + ' unlocked'); return; }
+  if (v === 'copy') { const n = copyTargets(p, addMonth(viewYM, -1), viewYM); render(); toast(n ? `Copied ${n} target${n === 1 ? '' : 's'} from ${monthLabel(addMonth(viewYM, -1))}` : 'Nothing new to copy'); return; }
   if (v === 'rename') {
     const name = await askText('Rename column', { value: c.name, max: 40 });
     if (name && name !== c.name) { c.name = name; save(); render(); }
@@ -526,13 +571,15 @@ async function columnMenu(c) {
 }
 async function clearDay(p, day) {
   if (!isDayFilled(p, viewYM, day)) return;
-  const ok = await choose(`Clear day ${day}?`, 'All values on this row will be removed.', [
+  const ok = await choose(`Clear day ${day}?`, 'All values on this row will be removed (locked targets stay).', [
     { label: 'Clear', v: true, cls: 'dng' }, { label: 'Cancel', v: false },
   ]);
   if (!ok) return;
   const mo = ensureMonth(p, viewYM);
   const old = mo.days[day] ? { ...mo.days[day] } : null;
-  delete mo.days[day]; save();
+  const keep = {}; p.columns.forEach(c => { if (c.locked && old?.[c.id] != null) keep[c.id] = old[c.id]; });
+  if (Object.keys(keep).length) mo.days[day] = keep; else delete mo.days[day];
+  save();
   toast('Day cleared', { label: 'Undo', fn: () => { if (old) { mo.days[day] = old; save(); render(); } } }, 6000);
   render();
 }
@@ -543,7 +590,7 @@ function copyYesterday() {
   if (!src) return toast('Yesterday is empty.');
   const td = todayDay();
   const dest = dayCells(p, curYM(), td);
-  p.columns.forEach(c => { if (src[c.id] != null && src[c.id] !== '') dest[c.id] = src[c.id]; });
+  p.columns.forEach(c => { if (!c.locked && src[c.id] != null && src[c.id] !== '') dest[c.id] = src[c.id]; });
   save(); toast('Copied yesterday into today'); viewYM = curYM(); scrollTodayOnce = true; render();
 }
 
@@ -646,7 +693,7 @@ function buildMonthRows(p, ym) {
       return String(v);
     })]);
   }
-  return { head, rows, note: p.months[ym]?.note || '' };
+  return { head, rows, note: p.months[ym]?.note || '', grey: [0, ...p.columns.map(c => !!c.locked)] .map((g, i) => i && g ? i : -1).filter(i => i > 0) };
 }
 function monthsInRange(p, from, to) {
   // from/to are YYYY-MM-DD or undefined
@@ -671,7 +718,7 @@ function exportDocx(p, mode, mon, from, to) {
     subtitle: `${months.length === 1 ? monthLabel(months[0]) : monthLabel(months[0]) + ' – ' + monthLabel(months[months.length - 1])}  ·  exported ${new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}`,
     months: months.map(ym => {
       const { head, rows, note } = buildMonthRows(p, ym);
-      return { title: monthLabel(ym), head, rows, note };
+      return { title: monthLabel(ym), head, rows, note, grey: buildMonthRows(p, ym).grey };
     }),
   };
   const name = months.length === 1
@@ -684,7 +731,8 @@ function exportDocx(p, mode, mon, from, to) {
 }
 function renderMonthPng(p, ym) {
   // Light paper-style canvas so the shared photo looks like his old sheet photos
-  const { head, rows, note } = buildMonthRows(p, ym);
+  const { head, rows, note, grey } = buildMonthRows(p, ym);
+  const G = new Set(grey);
   const cols = head.length;
   const scale = 2;
   const padX = 36, padY = 36;
@@ -721,7 +769,9 @@ function renderMonthPng(p, ym) {
   let x = padX;
   head.forEach((h, i) => {
     const w = i === 0 ? dayW : colW;
+    if (G.has(i)) { ctx.fillStyle = '#dedbd6'; ctx.fillRect(x, top, w, headH); }
     ctx.strokeRect(x, top, w, headH);
+    ctx.fillStyle = G.has(i) ? '#8a8a8a' : '#555';
     ctx.fillText(String(h).slice(0, 18).toUpperCase(), x + 8, top + 24);
     x += w;
   });
@@ -731,9 +781,10 @@ function renderMonthPng(p, ym) {
     x = padX;
     r.forEach((cell, i) => {
       const w = i === 0 ? dayW : colW;
+      if (G.has(i)) { ctx.fillStyle = '#ebe9e5'; ctx.fillRect(x, y, w, rowH); }
       ctx.strokeStyle = '#d9d5ce';
       ctx.strokeRect(x, y, w, rowH);
-      ctx.fillStyle = i === 0 ? '#333' : '#1a1a1a';
+      ctx.fillStyle = i === 0 ? '#333' : G.has(i) ? '#8f8f8f' : '#1a1a1a';
       ctx.font = (i === 0 ? '650 ' : '500 ') + '13px system-ui,sans-serif';
       const t = String(cell ?? '');
       ctx.fillText(t.slice(0, i === 0 ? 8 : 22), x + 8, y + 22);

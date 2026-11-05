@@ -44,12 +44,13 @@
     return w;
   }
   const cell = (t, w, o = {}) => `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${o.fill ? `<w:shd w:val="clear" w:color="auto" w:fill="${o.fill}"/>` : ''}</w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0"/>${o.align ? `<w:jc w:val="${o.align}"/>` : ''}</w:pPr>${run(t, o)}</w:p></w:tc>`;
-  const trow = (cells, W, o = {}) => `<w:tr><w:trPr><w:cantSplit/>${o.head ? '<w:tblHeader/>' : ''}</w:trPr>${cells.map((c, i) => cell(c, W[i] || W[W.length - 1], o)).join('')}</w:tr>`;
-  const table = (head, rows) => {
+  const trow = (cells, W, o = {}, G = new Set()) => `<w:tr><w:trPr><w:cantSplit/>${o.head ? '<w:tblHeader/>' : ''}</w:trPr>${cells.map((c, i) => cell(c, W[i] || W[W.length - 1], G.has(i) ? { ...o, color: '8C8C8C', fill: o.head ? 'E3E3E3' : 'F2F2F2' } : o)).join('')}</w:tr>`;
+  const table = (head, rows, grey) => {
+    const G = new Set(grey || []);
     const W = widths(head.length);
     const bd = s => `<w:${s} w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/>`;
     return `<w:tbl><w:tblPr><w:tblW w:w="${W.reduce((a, b) => a + b)}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map(bd).join('')}</w:tblBorders><w:tblCellMar><w:top w:w="60" w:type="dxa"/><w:left w:w="80" w:type="dxa"/><w:bottom w:w="60" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${W.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`
-      + trow(head, W, { head: 1, b: 1, fill: 'F2F2F2' }) + rows.map(r => trow(r, W)).join('') + '</w:tbl>';
+      + trow(head, W, { head: 1, b: 1, fill: 'F2F2F2' }, G) + rows.map(r => trow(r, W, {}, G)).join('') + '</w:tbl>';
   };
 
   /* model: { title, subtitle, note?, months:[{ title, head:[], rows:[[]], note? }] } */
@@ -59,7 +60,7 @@
     (m.months || []).forEach(mo => {
       body += para(mo.title, { b: 1, sz: 26, before: 240, after: 80, keep: 1 });
       if (mo.note) body += para(mo.note, { after: 80, color: '666666' });
-      body += table(mo.head, mo.rows) + para('', { after: 0 });
+      body += table(mo.head, mo.rows, mo.grey) + para('', { after: 0 });
     });
     const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
     const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${NS}><w:body>${body}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr></w:body></w:document>`;
