@@ -1,7 +1,7 @@
 /* Daily Log: monthly project sheets on this phone (localStorage). Keep it simple. */
 'use strict';
 const APP_NAME = 'Daily Log';
-const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.1.0';
+const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.0';
 const COL_TYPES = [
   { id: 'tick', label: 'Tick', hint: 'Tap cycles blank → ✓ → ✗' },
   { id: 'text', label: 'Text', hint: 'Anything' },
@@ -22,6 +22,7 @@ function el(tag, a = {}, ...kids) {
   return e;
 }
 const ICON = {
+  lock: '<svg class="lk-ic" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
 };
@@ -29,7 +30,7 @@ const ICON = {
 /* ---------------- data ---------------- */
 const fresh = () => ({
   v: SCHEMA,
-  settings: { catchup: false, vibrate: true },
+  settings: { catchup: false, vibrate: true, theme: 'peach' },
   projects: [],
   activeId: null,
   // reminder skip markers: { 'projId:YYYY-MM-DD': true, catchup:'YYYY-MM-DD' }
@@ -39,7 +40,7 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 function normCol(c) {
   if (!c || !c.name) return null;
   const type = ['tick', 'text', 'times', 'number'].includes(c.type) ? c.type : 'text';
-  return { id: String(c.id || uid()), name: String(c.name).slice(0, 40), type, locked: !!c.locked };
+  const w = +c.w; return { id: String(c.id || uid()), name: String(c.name).slice(0, 40), type, locked: !!c.locked, w: w >= 48 && w <= 480 ? Math.round(w) : null };
 }
 function normProject(p) {
   if (!p || !p.name) return null;
@@ -83,6 +84,7 @@ function migrate(d) {
 }
 let D; try { D = migrate(JSON.parse(localStorage.getItem(KEY))); } catch { D = fresh(); }
 const S = () => D.settings;
+applyTheme(S().theme);
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(D)); }
   catch { toast('Could not save. Phone storage may be full.'); }
@@ -334,7 +336,8 @@ function renderGrid(p) {
     el('th', { class: 'day' }, 'Day'),
     ...p.columns.map(c => el('th', {},
       el('button', { class: 'thbtn' + (c.locked ? ' lk' : ''), title: 'Edit column', onclick: () => columnMenu(c) },
-        el('span', {}, c.name), c.locked ? el('i', { class: 'lki' }, editCols.has(c.id) ? '✎' : '🔒') : null))));
+        el('span', {}, c.name), c.locked ? (editCols.has(c.id) ? el('i', { class: 'lki' }, '✎') : el('i', { class: 'lki', html: ICON.lock })) : null),
+      el('span', { class: 'rz', 'data-col': c.id, 'aria-hidden': 'true' }))));
   if (!p.columns.length) hr.append(el('th', {}, el('span', { style: 'color:var(--fg3);font-weight:500;text-transform:none;letter-spacing:0' }, 'Add a column →')));
   thead.append(hr); g.append(thead);
   const tb = el('tbody');
@@ -352,6 +355,7 @@ function renderGrid(p) {
     tb.append(tr);
   }
   g.append(tb);
+  applyWidths(p);
   if (scrollTodayOnce && isCur) {
     scrollTodayOnce = false;
     requestAnimationFrame(() => scrollToDay(td));
@@ -429,6 +433,7 @@ function commitCell(p, day, c, raw) {
   // soft update meta without full re-render (keeps focus)
   const filled = filledCount(p, viewYM);
   $('#meta').textContent = `${filled} of ${daysIn(viewYM)} days logged · ${p.columns.length} column${p.columns.length === 1 ? '' : 's'}`;
+  applyWidths(p);
   renderTabs();
   renderBanner();
   const cy = $('#copyYest');
@@ -539,12 +544,14 @@ async function columnMenu(c) {
     ...(c.locked ? [editing ? { label: 'Done (lock again)', v: 'done', cls: 'pri' } : { label: 'Edit (type targets)', v: 'edit', cls: 'pri' }] : []),
     { label: c.locked ? 'Unlock column' : 'Lock column', v: 'lock' },
     ...(c.locked ? [{ label: "Copy last month's targets", v: 'copy' }] : []),
+    ...(c.w ? [{ label: 'Auto width', v: 'autow' }] : []),
     { label: 'Rename', v: 'rename' },
     { label: 'Move left', v: 'left' },
     { label: 'Move right', v: 'right' },
     { label: 'Delete column', v: 'del', cls: 'dng' },
     { label: 'Cancel', v: null },
   ]);
+  if (v === 'autow') { c.w = null; save(); render(); toast(c.name + ': auto width'); return; }
   if (v === 'edit') { editCols.add(c.id); render(); toast('Editing ' + c.name + ' — tap ⋯ Done when finished'); return; }
   if (v === 'done') { editCols.delete(c.id); render(); toast(c.name + ' locked'); return; }
   if (v === 'lock') { c.locked = !c.locked; editCols.delete(c.id); save(); render(); toast(c.locked ? c.name + ' locked' : c.name + ' unlocked'); return; }
@@ -886,6 +893,7 @@ function settingsSheet() {
 
     const bits = [
       el('div', { class: 'sh-h' }, el('button', { class: 'ib', 'aria-label': 'Back', html: ICON.back, onclick: () => closeSheet() }), el('h2', {}, 'Settings')),
+      grp('Theme', themePicker(S().theme || 'peach', id => { S().theme = id; save(); })),
       grp('Reminders',
         it('10 PM catch-up', 'Lists only the projects still empty today', sw(S().catchup, v => { S().catchup = v; save(); if (v) askNotif(); })),
         it('Vibrate on tick', null, sw(S().vibrate, v => { S().vibrate = v; save(); })),
@@ -939,7 +947,7 @@ $('#copyYest').onclick = () => copyYesterday();
 // swipe months
 (() => {
   let x0, y0; const m = $('#scroller');
-  m.addEventListener('touchstart', e => { if (e.target.closest('input,button')) return x0 = null; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+  m.addEventListener('touchstart', e => { if (e.target.closest('input,button,textarea,.rz')) return x0 = null; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
   m.addEventListener('touchend', e => {
     if (x0 == null) return;
     const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
@@ -967,3 +975,46 @@ checkReminders();
 setInterval(checkReminders, 60000);
 
 function fitCell(t){ t.style.height='auto'; t.style.height=Math.max(44,t.scrollHeight)+'px'; }
+
+/* ---------------- column widths: Auto (fit content) or manual drag ---------------- */
+var _mctx;
+function textW(t, font) { _mctx = _mctx || document.createElement('canvas').getContext('2d'); _mctx.font = font; return _mctx.measureText(t).width; }
+function autoWidth(p, c) {
+  let w = textW(c.name.toUpperCase(), '650 12px system-ui,sans-serif') * 1.05 + 16 + (c.locked ? 18 : 0) + 8;
+  if (c.type !== 'tick') {
+    const f = (c.type === 'text' ? '14px' : '15px') + ' system-ui,sans-serif';
+    Object.values(p.months[viewYM]?.days || {}).forEach(x => { const v = x[c.id]; if (v) String(v).split('\n').forEach(l => { w = Math.max(w, textW(l, f) + 26); }); });
+  }
+  return Math.round(Math.min(240, Math.max(({ tick: 56, text: 96, times: 72, number: 64 })[c.type] || 64, w)));
+}
+function setColW(i, w) {
+  $('#grid').querySelectorAll(`tr > :nth-child(${i + 2})`).forEach(n => { n.style.width = n.style.minWidth = n.style.maxWidth = w + 'px'; });
+}
+function applyWidths(p) { p.columns.forEach((c, i) => setColW(i, c.w || autoWidth(p, c))); refitCells(); }
+function refitCells() { requestAnimationFrame(() => document.querySelectorAll('#grid textarea.cin').forEach(fitCell)); }
+(() => {
+  let drag = null, lastUp = { id: null, t: 0 };
+  document.addEventListener('pointerdown', e => {
+    const h = e.target.closest?.('.rz'); if (!h) return;
+    e.preventDefault(); e.stopPropagation();
+    const p = active(); const i = p.columns.findIndex(c => c.id === h.dataset.col); if (i < 0) return;
+    drag = { p, i, c: p.columns[i], x0: e.clientX, w0: h.parentElement.getBoundingClientRect().width, moved: false };
+    h.setPointerCapture?.(e.pointerId); h.classList.add('on');
+  }, true);
+  document.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x0; if (Math.abs(dx) > 3) drag.moved = true;
+    drag.w = Math.round(Math.min(480, Math.max(48, drag.w0 + dx))); setColW(drag.i, drag.w);
+  }, true);
+  const end = e => {
+    if (!drag) return; const d = drag; drag = null;
+    document.querySelectorAll('.rz.on').forEach(x => x.classList.remove('on'));
+    if (d.moved) { d.c.w = d.w; save(); refitCells(); lastUp = { id: null, t: 0 }; return; }
+    const now = Date.now();
+    if (lastUp.id === d.c.id && now - lastUp.t < 350) { d.c.w = null; save(); applyWidths(d.p); toast(d.c.name + ': auto width'); lastUp = { id: null, t: 0 }; }
+    else lastUp = { id: d.c.id, t: now };
+  };
+  document.addEventListener('pointerup', end, true);
+  document.addEventListener('pointercancel', end, true);
+  document.addEventListener('click', e => { if (e.target.closest?.('.rz')) { e.preventDefault(); e.stopPropagation(); } }, true);
+})();

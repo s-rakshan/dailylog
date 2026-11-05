@@ -1,7 +1,7 @@
 :root{
   --bg:#121212; --s1:#1b1b1d; --s2:#232326; --s3:#2c2c30; --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
   --fg:#f4f4f5; --fg2:#a8a8b0; --fg3:#6e6e78;
-  --ac:#f2b48c; --ac-dim:rgba(242,180,140,.16); --ac-ink:#1a120d;
+  --ac:#f5a57a; --acr:245,165,122; --ac-dim:rgba(var(--acr),.16); --ac-ink:#1a120d;
   --warn:#f0c36a; --bad:#ff7a7a; --ok:#7dcea0;
   --r:16px; --font:ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,'Noto Sans',sans-serif;
   --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
@@ -57,17 +57,15 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .grid th.day,.grid td.day{position:sticky;left:0;z-index:1;background:var(--bg);width:76px;min-width:76px;max-width:76px;padding:0 6px 0 12px;text-align:center;border-right:1px solid var(--line)}
 .grid thead th.day{z-index:3}
 .grid td.day{background:var(--s1)}
-.grid tr.today td{background:rgba(242,180,140,.07)}
-.grid tr.today td.day{background:rgba(242,180,140,.12)}
-.grid tr.today{outline:1px solid rgba(242,180,140,.35);outline-offset:-1px}
+.grid tr.today td{background:rgba(var(--acr),.07)}
+.grid tr.today td.day{background:rgba(var(--acr),.12)}
+.grid tr.today{outline:1px solid rgba(var(--acr),.35);outline-offset:-1px}
 .dnum{display:flex;flex-direction:column;align-items:center;justify-content:center;height:52px;font-weight:650;font-size:15px;line-height:1.1;gap:3px}
 .dnum small{font-size:10px;font-weight:500;color:var(--fg3);text-transform:uppercase}
 .grid tr.today .dnum{color:var(--ac)}
 .grid tr.today .dnum small{color:var(--ac)}
 
-.cell{min-width:88px;max-width:160px;height:52px;vertical-align:middle;padding:4px;position:relative}
-.cell.tick{min-width:56px;max-width:72px}
-.cell.text{min-width:120px;max-width:200px}
+.cell{height:52px;vertical-align:middle;padding:4px;position:relative}
 .ch{width:100%;height:100%;min-height:44px;border-radius:10px;display:grid;place-items:center;font-size:18px;font-weight:700;color:var(--fg3);background:transparent}
 .ch:active{background:var(--s2)}
 .ch.yes{color:var(--ok);font-size:20px}
@@ -75,7 +73,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .cin{display:block;width:100%;height:44px;min-height:44px;resize:none;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.3;border:0;outline:0;background:transparent;border-radius:10px;padding:12px 8px;font-size:15px;text-align:center}
 .cin:focus{background:var(--s2)}
 .cin.text{text-align:left;font-size:14px}
-.thbtn{display:flex;align-items:center;gap:4px;max-width:140px;padding:4px 2px;border-radius:8px;color:var(--fg2)}
+.thbtn{display:flex;align-items:center;gap:4px;max-width:100%;padding:4px 2px;border-radius:8px;color:var(--fg2)}
 .thbtn:active{background:var(--s2);color:var(--ac)}
 .thbtn span{overflow:hidden;text-overflow:ellipsis}
 
@@ -154,7 +152,19 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .grid td.locked{background:rgba(255,255,255,.025)}
 .grid td.locked .cin,.grid td.locked .ch{color:var(--fg3);pointer-events:none}
 .grid td.locked .ch.yes,.grid td.locked .ch.no{color:var(--fg3);opacity:.8}
-.grid td.editing{box-shadow:inset 0 0 0 1px rgba(242,180,140,.35)}
+.grid td.editing{box-shadow:inset 0 0 0 1px rgba(var(--acr),.35)}
 .thbtn.lk{color:var(--fg3)}
 .lki{font-style:normal;font-size:11px;opacity:.8}
 .lockrow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.themes{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;padding:14px 16px;justify-items:center}
+.tdot{width:38px;height:38px;border-radius:50%;background:var(--c);box-shadow:0 0 0 2px var(--s1);position:relative}
+.tdot.on{box-shadow:0 0 0 3px var(--s1),0 0 0 5px var(--c)}
+
+.grid thead th{position:sticky}
+.grid thead th:not(.day){padding-right:16px}
+.rz{position:absolute;top:0;bottom:0;right:0;width:16px;z-index:4;cursor:col-resize;touch-action:none}
+.rz::after{content:'';position:absolute;top:25%;bottom:25%;right:0;width:2px;border-radius:2px;background:transparent}
+.rz.on::after{background:var(--ac)}
+.lki{display:inline-flex}
+.lk-ic{width:13px;height:13px;stroke-width:2.2;fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
+.thbtn span{white-space:normal}
