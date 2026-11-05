@@ -1,7 +1,7 @@
 /* Daily Log: monthly project sheets on this phone (localStorage). Keep it simple. */
 'use strict';
 const APP_NAME = 'Daily Log';
-const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.0';
+const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.1';
 const COL_TYPES = [
   { id: 'tick', label: 'Tick', hint: 'Tap cycles blank → ✓ → ✗' },
   { id: 'text', label: 'Text', hint: 'Anything' },
@@ -22,6 +22,8 @@ function el(tag, a = {}, ...kids) {
   return e;
 }
 const ICON = {
+  check: '<svg class="tk" width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="M8.8 19.2 2.6 13l2.5-2.5 3.6 3.6L18.9 3.9 21.4 6.4 8.8 19.2Z"/></svg>',
+  cross: '<svg class="tk" width="14" height="14" viewBox="0 0 24 24"><path fill="currentColor" d="M18.8 21.2 12 14.4 5.2 21.2 2.8 18.8 9.6 12 2.8 5.2 5.2 2.8 12 9.6l6.8-6.8 2.4 2.4L14.4 12l6.8 6.8-2.4 2.4Z"/></svg>',
   lock: '<svg class="lk-ic" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
@@ -197,9 +199,11 @@ function choose(title, msg, buttons) {
   return new Promise(res => {
     openSheet((sh, st) => {
       st.onClose = () => res(null);
-      sh.append(head(title), msg ? el('p', { class: 'note', style: 'margin-top:0;font-size:15px;color:var(--fg2)' }, msg) : null,
-        el('div', { class: 'btns', style: buttons.length > 2 ? 'flex-direction:column' : '' },
-          buttons.map(b => el('button', { class: 'btn ' + (b.cls || ''), onclick: () => { st.onClose = null; closeSheet(); res(b.v); } }, b.label))));
+      sh.append(head(title));
+      if (msg) sh.append(el('p', { class: 'note', style: 'margin-top:0;font-size:15px;color:var(--fg2)' }, msg));
+      sh.append(
+        el('div', { class: 'btns' + (buttons.length > 2 ? ' list' : '') },
+          buttons.map(b => el('button', { class: 'btn ' + (b.cls || '') + (b.label === 'Cancel' ? ' cxl' : ''), onclick: () => { st.onClose = null; closeSheet(); res(b.v); } }, b.label))));
     });
   });
 }
@@ -310,7 +314,7 @@ function renderBanner() {
   if (!isDayFilled(p, y.ym, y.day)) {
     b.hidden = false;
     b.append(
-      el('span', { class: 't' }, `Fill yesterday? (${y.label})`),
+      el('span', { class: 't' }, `Yesterday called. It felt ignored. (${y.label})`),
       el('button', { class: 'btn', onclick: () => { viewYM = y.ym; scrollTodayOnce = false; render(); setTimeout(() => scrollToDay(y.day), 50); } }, 'Open'));
     return;
   }
@@ -386,7 +390,7 @@ function cellControl(p, day, c) {
         if (S().vibrate) try { navigator.vibrate?.(10); } catch {}
         render();
       },
-    }, v || '');
+    }, ...(v === '✓' ? [el('span', { class: 'mk', html: ICON.check })] : v === '✗' ? [el('span', { class: 'mk', html: ICON.cross })] : []));
   }
   const inp = el('textarea', {
     class: 'cin' + (c.type === 'text' ? ' text' : ''), rows: 1, 'data-col': c.id,
@@ -791,10 +795,15 @@ function renderMonthPng(p, ym) {
       if (G.has(i)) { ctx.fillStyle = '#ebe9e5'; ctx.fillRect(x, y, w, rowH); }
       ctx.strokeStyle = '#d9d5ce';
       ctx.strokeRect(x, y, w, rowH);
-      ctx.fillStyle = i === 0 ? '#333' : G.has(i) ? '#8f8f8f' : '#1a1a1a';
+      ctx.fillStyle = i === 0 ? '#333' : (G.has(i) || cell === '✗') ? '#8f8f8f' : '#1a1a1a';
       ctx.font = (i === 0 ? '650 ' : '500 ') + '13px system-ui,sans-serif';
       const t = String(cell ?? '');
-      ctx.fillText(t.slice(0, i === 0 ? 8 : 22), x + 8, y + 22);
+      if (i && (t === '✓' || t === '✗')) {
+        ctx.save(); ctx.translate(x + 8, y + 10); ctx.scale(14 / 24, 14 / 24);
+        ctx.fillStyle = t === '✓' ? (G.has(i) ? '#8f8f8f' : '#2b2b2b') : '#9a9a9a';
+        ctx.fill(new Path2D(t === '✓' ? 'M8.8 19.2 2.6 13l2.5-2.5 3.6 3.6L18.9 3.9 21.4 6.4 8.8 19.2Z' : 'M18.8 21.2 12 14.4 5.2 21.2 2.8 18.8 9.6 12 2.8 5.2 5.2 2.8 12 9.6l6.8-6.8 2.4 2.4L14.4 12l6.8 6.8-2.4 2.4Z'));
+        ctx.restore();
+      } else ctx.fillText(t.slice(0, i === 0 ? 8 : 22), x + 8, y + 22);
       x += w;
     });
   });
@@ -944,19 +953,7 @@ $('#projMenu').onclick = () => projectMenu(active());
 $('#addCol').onclick = () => addColumn();
 $('#copyYest').onclick = () => copyYesterday();
 
-// swipe months
-(() => {
-  let x0, y0; const m = $('#scroller');
-  m.addEventListener('touchstart', e => { if (e.target.closest('input,button,textarea,.rz')) return x0 = null; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
-  m.addEventListener('touchend', e => {
-    if (x0 == null) return;
-    const dx = e.changedTouches[0].clientX - x0, dy = e.changedTouches[0].clientY - y0;
-    if (Math.abs(dx) > 80 && Math.abs(dy) < 40) {
-      if (dx < 0 && viewYM < curYM()) { viewYM = addMonth(viewYM, 1); scrollTodayOnce = viewYM === curYM(); render(); }
-      else if (dx > 0) { viewYM = addMonth(viewYM, -1); scrollTodayOnce = false; render(); }
-    }
-  }, { passive: true });
-})();
+// (month swipe removed in 1.2.1: change months with ◀ ▶ or the month list)
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkReminders(); render(); } });
 navigator.serviceWorker?.addEventListener('message', e => {
@@ -980,9 +977,9 @@ function fitCell(t){ t.style.height='auto'; t.style.height=Math.max(44,t.scrollH
 var _mctx;
 function textW(t, font) { _mctx = _mctx || document.createElement('canvas').getContext('2d'); _mctx.font = font; return _mctx.measureText(t).width; }
 function autoWidth(p, c) {
-  let w = textW(c.name.toUpperCase(), '650 12px system-ui,sans-serif') * 1.05 + 16 + (c.locked ? 18 : 0) + 8;
+  let w = textW(c.name.toUpperCase(), '650 12px system-ui,sans-serif') * 1.05 + 32 + (c.locked ? 18 : 0);
   if (c.type !== 'tick') {
-    const f = (c.type === 'text' ? '14px' : '15px') + ' system-ui,sans-serif';
+    const f = (c.type === 'text' ? '500 15px' : '600 15px') + ' system-ui,sans-serif';
     Object.values(p.months[viewYM]?.days || {}).forEach(x => { const v = x[c.id]; if (v) String(v).split('\n').forEach(l => { w = Math.max(w, textW(l, f) + 26); }); });
   }
   return Math.round(Math.min(240, Math.max(({ tick: 56, text: 96, times: 72, number: 64 })[c.type] || 64, w)));
