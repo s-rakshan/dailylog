@@ -123,6 +123,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .sw input:checked+i::after{transform:translateX(20px);background:#fff}
 .tin{height:44px;border-radius:12px;background:var(--s3);border:0;padding:0 10px;font-size:16px;color-scheme:dark;outline:0;width:100%}
 .tin:focus{box-shadow:0 0 0 1px var(--ac)}
+.tin-time{width:auto;flex:none;min-width:8.6em;max-width:10.5em}
 .sel{height:44px;border-radius:12px;background:var(--s3) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d8d8dc' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 16px center/16px;border:0;padding:0 44px 0 14px;font-size:16px;outline:0;-webkit-appearance:none;appearance:none;width:100%}
 .ta{width:100%;min-height:120px;border-radius:14px;background:var(--s2);border:1px solid var(--line2);padding:12px 14px;font-size:16px;line-height:1.45;resize:vertical;outline:0}
 .ta:focus{border-color:var(--ac)}

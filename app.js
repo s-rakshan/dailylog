@@ -1,7 +1,7 @@
 /* Daily Log: monthly project sheets on this phone (localStorage). Keep it simple. */
 'use strict';
 const APP_NAME = 'Daily Log';
-const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.3';
+const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.4';
 const COL_TYPES = [
   { id: 'tick', label: 'Tick', hint: 'Tap cycles blank → ✓ → ✗' },
   { id: 'text', label: 'Text', hint: 'Anything' },
@@ -660,7 +660,7 @@ function reminderSheet(p) {
         p.remind = e.target.checked; save();
         if (p.remind) await askNotif();
       } }), el('i'));
-    const tm = el('input', { class: 'tin', type: 'time', value: p.remindAt, onchange: e => { p.remindAt = e.target.value || '09:00'; save(); } });
+    const tm = el('input', { class: 'tin tin-time', type: 'time', value: p.remindAt, onchange: e => { p.remindAt = e.target.value || '09:00'; save(); } });
     sh.append(head('Reminder'),
       el('div', { class: 'card' },
         el('div', { class: 'it' }, el('div', { class: 'l' }, el('div', {}, 'Remind me'), el('small', {}, 'Skipped if today is already filled')), sw),
