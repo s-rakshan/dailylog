@@ -1,7 +1,7 @@
 /* Daily Log: monthly project sheets on this phone (localStorage). Keep it simple. */
 'use strict';
 const APP_NAME = 'Daily Log';
-const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.4';
+const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.5';
 const COL_TYPES = [
   { id: 'tick', label: 'Tick', hint: 'Tap cycles blank → ✓ → ✗' },
   { id: 'text', label: 'Text', hint: 'Anything' },
