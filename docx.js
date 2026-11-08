@@ -28,7 +28,7 @@
 
   const x = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
   const run = (t, o = {}) => {
-    const rp = (o.b ? '<w:b/>' : '') + (o.color ? `<w:color w:val="${o.color}"/>` : '') + (o.sz ? `<w:sz w:val="${o.sz}"/><w:szCs w:val="${o.sz}"/>` : '');
+    const rp = (o.b ? '<w:b/>' : '') + (o.i ? '<w:i/>' : '') + (o.color ? `<w:color w:val="${o.color}"/>` : '') + (o.sz ? `<w:sz w:val="${o.sz}"/><w:szCs w:val="${o.sz}"/>` : '');
     return String(t ?? '').split('\n').map((ln, i) => (i ? '<w:r><w:br/></w:r>' : '') + `<w:r>${rp ? `<w:rPr>${rp}</w:rPr>` : ''}<w:t xml:space="preserve">${x(ln)}</w:t></w:r>`).join('');
   };
   const para = (t, o = {}) => `<w:p><w:pPr>${o.keep ? '<w:keepNext/>' : ''}<w:spacing w:before="${o.before || 0}" w:after="${o.after ?? 80}"/>${o.align ? `<w:jc w:val="${o.align}"/>` : ''}</w:pPr>${run(t, o)}</w:p>`;
@@ -57,9 +57,10 @@
   window.makeDocx = function (m) {
     let body = para(m.title, { b: 1, sz: 36, after: 40 }) + para(m.subtitle, { color: '666666', after: 160 });
     if (m.note) body += para(m.note, { after: 200, color: '444444' });
-    (m.months || []).forEach(mo => {
+    (m.months || []).forEach((mo, idx) => {
+      if (idx) body += '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
       body += para(mo.title, { b: 1, sz: 26, before: 240, after: 80, keep: 1 });
-      if (mo.note) body += para(mo.note, { after: 80, color: '666666' });
+      if (mo.note) body += para(mo.note, { after: 80, color: '666666', i: 1 });
       body += table(mo.head, mo.rows, mo.grey) + para('', { after: 0 });
     });
     const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';

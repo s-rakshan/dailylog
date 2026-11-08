@@ -14,6 +14,7 @@ python3 -m http.server 8080 --directory /workspace/dailylog
 
 - `index.html` / `styles.css` / `app.js` — app
 - `docx.js` — offline Word export
+- `pdf.js` — offline PDF export
 - `sw.js` + `manifest.webmanifest` — installable offline PWA
 - `icons/` — app icons
 - `tests/run.js` — Playwright phone-viewport smoke test

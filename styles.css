@@ -133,6 +133,8 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .ta:focus{border-color:var(--ac)}
 .row2{display:flex;gap:8px;margin-top:8px}
 .row2 .btn{height:48px;font-size:15px}
+.row3{display:flex;gap:8px;margin-top:10px}
+.row3 .btn{flex:1;height:48px;min-width:0;padding:0 6px;font-size:15px}
 .note{color:var(--fg3);font-size:13px;line-height:1.45;margin:14px 4px 0}
 .fld{margin-top:16px}
 .fld label{display:block;color:var(--fg2);font-size:14px;margin:0 2px 8px}
@@ -150,7 +152,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .col-row .mv button{width:36px;height:28px;border-radius:8px;background:var(--s3);color:var(--fg2);font-size:12px;display:grid;place-items:center}
 .card .btn:not(.pri):not(.acc){background:var(--s3)}
 .it.col .btn{flex:none;width:100%}
-.it.col .row2 .btn{flex:1;width:auto}
+.it.col .row2 .btn,.it.col .row3 .btn{flex:1;width:auto}
 
 /* locked (target) columns */
 .grid td.locked{background:rgba(255,255,255,.025)}

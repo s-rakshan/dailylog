@@ -1,7 +1,7 @@
 /* Daily Log: monthly project sheets on this phone (localStorage). Keep it simple. */
 'use strict';
 const APP_NAME = 'Daily Log';
-const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.2.9';
+const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.3.0';
 const COL_TYPES = [
   { id: 'tick', label: 'Tick', hint: 'Tap cycles blank → ✓ → ✗' },
   { id: 'text', label: 'Text', hint: 'Anything' },
@@ -701,10 +701,18 @@ function checkReminders() {
   });
 }
 
-/* ---------------- export + PNG ---------------- */
+/* ---------------- export: PDF, DOCX, PNG ---------------- */
+const EXPORT_MIME = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  png: 'image/png',
+};
 function download(blob, name) {
   const a = el('a', { href: URL.createObjectURL(blob), download: name }); document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+function imageNoteLine(note) {
+  return String(note || '').split('\n')[0].slice(0, 80);
 }
 function monthKeysFor(p) {
   const set = new Set(Object.keys(p.months || {}));
@@ -742,42 +750,42 @@ function monthsInRange(p, from, to) {
   }).sort();
   return keys;
 }
-function exportDocx(p, mode, mon, from, to) {
-  let months = [];
-  if (mode === 'month') months = [mon];
-  else if (mode === 'range') months = monthsInRange(p, from, to);
-  else months = monthKeysFor(p).sort();
-  // trim empty trailing months except the selected one in month mode
-  if (mode !== 'month') months = months.filter(ym => filledCount(p, ym) > 0 || Object.keys(p.months[ym]?.days || {}).length);
-  if (!months.length) months = [curYM()];
-  const model = {
+function monthsForExport(p, mode, mon, from, to) {
+  if (mode === 'month') return [mon || curYM()];
+  const months = (mode === 'range' ? monthsInRange(p, from, to) : monthKeysFor(p).slice().sort())
+    .filter(ym => filledCount(p, ym) > 0 || Object.keys(p.months[ym]?.days || {}).length);
+  if (!months.length && mode !== 'range') return [curYM()];
+  return months;
+}
+function exportStem(p, months) {
+  return months.length === 1
+    ? `${slug(p.name)}-${months[0]}`
+    : `${slug(p.name)}-${months[0]}_to_${months[months.length - 1]}`;
+}
+function buildExportModel(p, months) {
+  return {
     title: p.name,
     subtitle: `${months.length === 1 ? monthLabel(months[0]) : monthLabel(months[0]) + ' – ' + monthLabel(months[months.length - 1])}  ·  exported ${new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}`,
     months: months.map(ym => {
-      const { head, rows, note } = buildMonthRows(p, ym);
-      return { title: monthLabel(ym), head, rows, note, grey: buildMonthRows(p, ym).grey };
+      const built = buildMonthRows(p, ym);
+      return { title: monthLabel(ym), head: built.head, rows: built.rows, note: built.note, grey: built.grey };
     }),
   };
-  const name = months.length === 1
-    ? `${slug(p.name)}-${months[0]}.docx`
-    : `${slug(p.name)}-${months[0]}_to_${months[months.length - 1]}.docx`;
-  const blob = makeDocx(model);
-  download(blob, name);
-  toast('Saved ' + name);
-  return { blob, name, months };
+}
+function pngLayout(colCount, hasNote) {
+  const scale = 2, padX = 36, padY = 36, dayW = 70;
+  const colW = Math.max(90, Math.min(160, Math.floor(520 / Math.max(1, colCount - 1))));
+  const rowH = 34, headH = 40, titleH = 56 + (hasNote ? 28 : 0);
+  const tableW = dayW + colW * Math.max(0, colCount - 1);
+  const W = Math.max(640, tableW + padX * 2);
+  return { scale, padX, padY, dayW, colW, rowH, headH, titleH, tableW, W };
 }
 function renderMonthPng(p, ym) {
-  // Light paper-style canvas so the shared photo looks like his old sheet photos
+  // Light paper sheet. Month note is the first line, first 80 characters, italic.
   const { head, rows, note, grey } = buildMonthRows(p, ym);
   const G = new Set(grey);
-  const cols = head.length;
-  const scale = 2;
-  const padX = 36, padY = 36;
-  const dayW = 70, colW = Math.max(90, Math.min(160, Math.floor(520 / Math.max(1, cols - 1))));
-  const rowH = 34, headH = 40;
-  const titleH = 56 + (note ? 28 : 0);
-  const tableW = dayW + colW * (cols - 1);
-  const W = Math.max(640, tableW + padX * 2);
+  const L = pngLayout(head.length, !!String(note || '').trim());
+  const { scale, padX, padY, dayW, colW, rowH, headH, titleH, tableW, W } = L;
   const H = padY * 2 + titleH + headH + rowH * rows.length + 24;
   const c = document.createElement('canvas');
   c.width = W * scale; c.height = H * scale;
@@ -793,7 +801,7 @@ function renderMonthPng(p, ym) {
   ctx.fillText(monthLabel(ym), padX, padY + 48);
   if (note) {
     ctx.font = 'italic 13px system-ui,sans-serif';
-    ctx.fillText(note.split('\n')[0].slice(0, 80), padX, padY + 70);
+    ctx.fillText(imageNoteLine(note), padX, padY + 70);
   }
   const top = padY + titleH;
   // header
@@ -839,29 +847,56 @@ function renderMonthPng(p, ym) {
   ctx.fillText('Daily Log', padX, H - 14);
   return new Promise(res => c.toBlob(b => res(b), 'image/png'));
 }
-async function sharePngs(p, months) {
-  const files = [];
-  for (const ym of months) {
-    const blob = await renderMonthPng(p, ym);
-    if (!blob) continue;
-    files.push(new File([blob], `${slug(p.name)}-${ym}.png`, { type: 'image/png' }));
-  }
-  if (!files.length) return toast('Nothing to share.');
-  let ok = false;
-  try { ok = !!navigator.canShare?.({ files }); } catch {}
-  if (ok) {
-    try { await navigator.share({ files, title: p.name }); }
-    catch (e) {
-      if (e?.name !== 'AbortError') {
-        files.forEach(f => download(f, f.name));
-        toast('Couldn\'t share, so saved PNG' + (files.length > 1 ? 's' : '') + ' to Downloads');
-      }
+async function makeExportFiles(p, kind, months) {
+  if (kind === 'png') {
+    const files = [];
+    for (const ym of months) {
+      const blob = await renderMonthPng(p, ym);
+      if (!blob) continue;
+      files.push(new File([blob], `${slug(p.name)}-${ym}.png`, { type: EXPORT_MIME.png }));
     }
-    return;
+    return files;
+  }
+  const model = buildExportModel(p, months);
+  const mime = EXPORT_MIME[kind] || 'application/octet-stream';
+  const blob = kind === 'pdf' ? makePdf(model) : makeDocx(model);
+  return [new File([blob], `${exportStem(p, months)}.${kind === 'pdf' ? 'pdf' : 'docx'}`, { type: mime })];
+}
+function shareCancelled(e) {
+  return e?.name === 'AbortError';
+}
+async function saveFiles(files) {
+  // WebView fallback. The wrapper resolves true only after the file is saved.
+  // A missing helper uses the browser download. A rejection is not a save.
+  const native = globalThis.__androidDownloadFiles;
+  if (typeof native === 'function') {
+    const ok = await native(files);
+    return ok === true;
   }
   files.forEach(f => download(f, f.name));
-  toast('Sharing isn\'t available here, so saved PNG' + (files.length > 1 ? 's' : '') + ' to Downloads');
+  return true;
 }
+async function deliverFiles(files, title) {
+  // The wrapper replaces navigator.share. A resolved call means the sheet opened,
+  // not that sending finished. AbortError is a browser cancel and does not save.
+  // DataError, a false launch, or no share support saves the file.
+  if (!files.length) return 'empty';
+  let can = false;
+  try { can = typeof navigator.canShare === 'function' && !!navigator.canShare({ files }); } catch {}
+  if (can && typeof navigator.share === 'function') {
+    try {
+      const opened = await navigator.share({ files, title });
+      if (opened !== false) return 'opened';
+    } catch (e) {
+      if (shareCancelled(e)) return 'cancelled';
+    }
+  }
+  const saved = await saveFiles(files);
+  return saved ? 'downloaded' : 'failed';
+}
+window.DailyLogExport = {
+  monthsForExport, buildExportModel, makeExportFiles, deliverFiles, imageNoteLine, exportStem, buildMonthRows, pngLayout, EXPORT_MIME,
+};
 
 /* ---------------- settings ---------------- */
 function settingsSheet() {
@@ -885,14 +920,21 @@ function settingsSheet() {
         exMode = v; rangeBox.hidden = v !== 'range'; monBox.hidden = v !== 'month';
         exSeg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b === e.currentTarget));
       } }, l)));
-    const runExport = async share => {
+    let exporting = false;
+    const runExport = async kind => {
+      if (exporting) return;
       if (!p) return toast('Create a project first.');
-      const monthsList = exMode === 'month' ? [exMon.value]
-        : exMode === 'range' ? monthsInRange(p, exFrom.value, exTo.value)
-        : monthKeysFor(p).sort().filter(ym => filledCount(p, ym) > 0 || ym === curYM());
+      const monthsList = monthsForExport(p, exMode, exMon.value, exFrom.value, exTo.value);
       if (!monthsList.length) return toast('Nothing to export.');
-      if (share) await sharePngs(p, monthsList);
-      else exportDocx(p, exMode, exMon.value, exFrom.value, exTo.value);
+      exporting = true;
+      try {
+        const files = await makeExportFiles(p, kind, monthsList);
+        if (!files.length) return toast('Nothing to export.');
+        const status = await deliverFiles(files, p.name);
+        if (status === 'downloaded') toast(files.length === 1 ? 'Saved ' + files[0].name : 'Saved ' + files.length + ' files');
+        else if (status === 'failed') toast('Could not save the file.');
+      } catch { toast('Could not export.'); }
+      finally { exporting = false; }
     };
 
     const perm = 'Notification' in window ? Notification.permission : 'unsupported';
@@ -937,16 +979,21 @@ function settingsSheet() {
         it('Notifications', perm === 'denied' ? 'Turn on notifications for this app in your phone or browser settings' : 'Needed for reminders to reach you', nb)),
       p ? grp('Export · ' + p.name,
         el('div', { class: 'it col' }, exSeg, monBox, rangeBox,
-          el('div', { class: 'row2', style: 'margin-top:8px' },
-            el('button', { class: 'btn pri', onclick: () => runExport(false) }, 'Save'),
-            el('button', { class: 'btn', onclick: () => runExport(true).catch(e => toast('Share failed: ' + (e?.message || e))) }, 'Share')))) : null,
+          el('div', { class: 'row3' },
+            el('button', { class: 'btn', type: 'button', 'aria-label': 'Export as a PDF file', onclick: () => runExport('pdf') }, 'PDF'),
+            el('button', { class: 'btn', type: 'button', 'aria-label': 'Export as a DOCX file', onclick: () => runExport('docx') }, 'DOCX'),
+            el('button', { class: 'btn', type: 'button', 'aria-label': 'Export as a PNG image', onclick: () => runExport('png') }, 'PNG')),
+          el('p', { class: 'note', style: 'margin:10px 2px 2px' }, 'Makes a file on this phone and opens the share sheet. If that isn\'t available, the file downloads.'))) : null,
       grp('Backup',
         el('div', { class: 'it col' },
           el('div', { class: 'row2' },
-            el('button', { class: 'btn', onclick: () => {
-              const blob = new Blob([JSON.stringify(D, null, 2)], { type: 'application/json' });
-              download(blob, `dailylog-backup-${curYM()}.json`);
-              toast('Backup saved');
+            el('button', { class: 'btn', onclick: async () => {
+              const name = `dailylog-backup-${curYM()}.json`;
+              const file = new File([JSON.stringify(D, null, 2)], name, { type: 'application/json' });
+              try {
+                const ok = await saveFiles([file]);
+                toast(ok ? 'Backup saved' : 'Could not save the backup.');
+              } catch { toast('Could not save the backup.'); }
             } }, 'Download backup'),
             el('button', { class: 'btn', onclick: () => fileIn.click() }, 'Restore…')),
           fileIn)),
