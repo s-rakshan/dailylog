@@ -1,7 +1,7 @@
 /* Daily Log: monthly project sheets on this phone (localStorage). Keep it simple. */
 'use strict';
 const APP_NAME = 'Daily Log';
-const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.3.0';
+const KEY = 'dailylog.v1', SCHEMA = 1, VERSION = '1.3.1';
 const COL_TYPES = [
   { id: 'tick', label: 'Tick', hint: 'Tap cycles blank → ✓ → ✗' },
   { id: 'text', label: 'Text', hint: 'Anything' },
@@ -100,6 +100,57 @@ const curYM = () => { const d = now(); return ymKey(d.getFullYear(), d.getMonth(
 const parseYM = ym => { const [y, m] = ym.split('-').map(Number); return { y, m: m - 1 }; };
 const daysIn = ym => { const { y, m } = parseYM(ym); return new Date(y, m + 1, 0).getDate(); };
 const monthLabel = ym => { const { y, m } = parseYM(ym); return new Date(y, m, 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }); };
+const shortMonth = ym => { const { y, m } = parseYM(ym); return new Date(y, m, 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }); };
+function monthTextRoom() {
+  const bar = document.querySelector('.mbar');
+  const cs = getComputedStyle(bar);
+  const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  const gap = parseFloat(cs.columnGap || cs.gap) || 0;
+  let fixed = 0, n = 0;
+  for (const el of bar.children) {
+    if (el.hidden) continue;
+    n++;
+    if (el.id === 'monthBtn') continue;
+    const s = getComputedStyle(el);
+    const extra = (parseFloat(s.marginLeft) || 0) + (parseFloat(s.marginRight) || 0);
+    fixed += (el.classList.contains('sp') ? (parseFloat(s.minWidth) || 0) : el.getBoundingClientRect().width) + extra;
+  }
+  const bcs = getComputedStyle($('#monthBtn'));
+  const btnPad = (parseFloat(bcs.paddingLeft) || 0) + (parseFloat(bcs.paddingRight) || 0);
+  return bar.clientWidth - pad - fixed - gap * Math.max(0, n - 1) - btnPad;
+}
+function fitMonthTitle(name) {
+  const btn = $('#monthBtn'), nameEl = $('#monthName'), whenEl = $('#monthWhen');
+  const full = monthLabel(viewYM), brief = shortMonth(viewYM);
+  const cs = getComputedStyle(btn);
+  const w = s => textW(s, `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`);
+  const btnPad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+  const room = monthTextRoom();
+  const minName = 64; // don't keep a one-letter stub; drop the name instead
+  const fullSep = ' · ' + full, briefSep = ' · ' + brief, nameW = w(name);
+  let showName = name, when = fullSep;
+  if (nameW + w(fullSep) <= room + 1) when = fullSep;
+  else if (w(fullSep) + minName <= room + 1) when = fullSep;
+  else if (nameW + w(briefSep) <= room + 1) when = briefSep;
+  else if (w(briefSep) + minName <= room + 1) when = briefSep;
+  else { showName = ''; when = w(full) <= room + 1 ? full : brief; }
+  const apply = (nm, wh) => {
+    nameEl.textContent = nm;
+    whenEl.textContent = wh;
+    const whenW = w(wh);
+    const textWants = (nm ? Math.min(w(nm), Math.max(0, room - whenW)) : 0) + whenW;
+    btn.style.minWidth = Math.ceil(whenW + btnPad) + 'px';
+    btn.style.maxWidth = Math.floor(Math.max(whenW, textWants) + btnPad) + 'px';
+  };
+  apply(showName, when);
+  // If the name was squeezed to a sliver, keep the month and drop the name.
+  if (showName && nameEl.clientWidth < minName) {
+    showName = '';
+    when = w(full) <= monthTextRoom() + 1 ? full : brief;
+    apply('', when);
+  }
+  btn.setAttribute('aria-label', (name ? name + ' · ' : '') + full);
+}
 const addMonth = (ym, n) => { const { y, m } = parseYM(ym); const d = new Date(y, m + n, 1); return ymKey(d.getFullYear(), d.getMonth()); };
 const todayDay = () => now().getDate();
 const weekday = (ym, day) => { const { y, m } = parseYM(ym); return new Date(y, m, day).toLocaleDateString('en-IN', { weekday: 'short' }); };
@@ -244,10 +295,10 @@ function render() {
   $('#empty').hidden = true; $('#sheetWrap').hidden = false; $('#dock').hidden = false;
   // clamp view month to not go past current
   if (viewYM > curYM()) viewYM = curYM();
-  $('#monthLabel').textContent = p.name + ' · ' + monthLabel(viewYM);
   $('#thisMonthBtn').hidden = viewYM === curYM();
   $('#nextM').disabled = viewYM >= curYM();
   $('#nextM').style.opacity = viewYM >= curYM() ? '.35' : '1';
+  fitMonthTitle(p.name);
 
   const mo = ensureMonth(p, viewYM);
   const first = (mo.note || '').split('\n')[0].trim();
@@ -575,10 +626,20 @@ async function columnMenu(c) {
     ]);
     if (!ok) return;
     const removed = p.columns.splice(idx, 1)[0];
-    // keep cell values in data (harmless) — or strip? Spec: delete column. Strip for cleanliness.
-    Object.values(p.months).forEach(mo => Object.values(mo.days || {}).forEach(cells => { delete cells[removed.id]; }));
+    // Strip the cells, but remember every month so Undo can put them back.
+    const kept = [];
+    Object.values(p.months).forEach(mo => Object.values(mo.days || {}).forEach(cells => {
+      if (Object.prototype.hasOwnProperty.call(cells, removed.id)) {
+        kept.push([cells, cells[removed.id]]);
+        delete cells[removed.id];
+      }
+    }));
     save();
-    toast('Column deleted', { label: 'Undo', fn: () => { p.columns.splice(idx, 0, removed); save(); render(); } }, 7000);
+    toast('Column deleted', { label: 'Undo', fn: () => {
+      p.columns.splice(Math.min(idx, p.columns.length), 0, removed);
+      kept.forEach(([cells, val]) => { cells[removed.id] = val; });
+      save(); render();
+    } }, 7000);
     render();
   }
 }

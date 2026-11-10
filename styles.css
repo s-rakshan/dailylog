@@ -25,7 +25,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .ib{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;color:var(--fg2);flex:none}
 .ib:active{background:var(--s2)}
 .add-p{color:var(--ac)}
-.sp{flex:1}
+.sp{flex:1;min-width:8px}
 
 .banner{margin:10px 12px 0;padding:10px 10px 10px 14px;border-radius:14px;background:var(--s1);border:1px solid var(--line2);display:flex;align-items:center;gap:8px;font-size:15px}
 .banner .t{flex:1;min-width:0}
@@ -39,10 +39,15 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke
 .empty p{color:var(--fg2);line-height:1.5;margin-bottom:28px}
 .empty .btn{display:inline-flex;height:52px;padding:0 24px;border-radius:16px;background:var(--fg);color:#111;font-weight:700;font-size:16px;align-items:center}
 
-.mbar{display:flex;align-items:center;gap:2px;padding:4px 6px 2px;flex:none}
-.month{height:44px;padding:0 6px;border-radius:12px;font-weight:650;font-size:16px;white-space:nowrap}
+.mbar{display:flex;align-items:center;gap:2px;padding:4px 8px 2px;flex:none;min-width:0;max-width:100%;overflow:hidden}
+.mbar>.ib,.mbar>.chip{flex:none}
+.month{height:44px;min-width:0;flex:0 1 auto;display:flex;align-items:center;padding:0 8px;border-radius:12px;font-weight:650;font-size:16px;text-align:left;overflow:hidden}
+.month #monthLabel{display:flex;align-items:center;min-width:0;max-width:100%;overflow:hidden}
+.month #monthName{min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.month #monthName:empty{display:none}
+.month #monthWhen{flex:none;white-space:nowrap}
 .month:active{background:var(--s2)}
-.chip{height:32px;padding:0 12px;border-radius:99px;background:var(--ac-dim);color:var(--ac);font-size:13px;font-weight:600;margin-left:4px}
+.chip{height:32px;padding:0 12px;border-radius:99px;background:var(--ac-dim);color:var(--ac);font-size:13px;font-weight:600;margin-left:4px;flex:none;white-space:nowrap}
 
 .info{display:block;width:calc(100% - 24px);margin:6px 12px 0;padding:10px 12px;border-radius:12px;background:var(--s1);border:1px solid var(--line);color:var(--fg2);font-size:14px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:40px}
 .info.empty-info{color:var(--fg3);font-style:italic}
